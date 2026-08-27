@@ -1,0 +1,11 @@
+{
+  "name": "s-center-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Workspace-level documentation routing and verification for the S.Center prototype.",
+  "scripts": {
+    "check": "node scripts/check-workspace.mjs",
+    "check:docs": "node scripts/check-workspace.mjs --docs-only"
+  }
+}

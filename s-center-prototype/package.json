@@ -1,0 +1,12 @@
+{
+  "name": "s-center-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Native HTML, CSS and JavaScript prototype of the S-Center digital chessboard shell.",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "open": "node scripts/open.mjs",
+    "check": "node scripts/check.mjs"
+  }
+}

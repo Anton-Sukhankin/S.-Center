@@ -1,0 +1,10 @@
+{
+    "name": "digital-chessboard-transfer",
+    "private": true,
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "start": "node scripts/serve.mjs",
+        "check": "node --check src/data/construction-objects-data.js && node --check src/data/digital-chessboard-data.js && node --check src/components/construction-object-selector/construction-object-selector.js && node --check src/feature/digital-chessboard.js && node --check src/host/standalone.js && node --check scripts/serve.mjs"
+    }
+}

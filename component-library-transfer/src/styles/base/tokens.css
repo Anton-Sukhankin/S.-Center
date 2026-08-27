@@ -1,0 +1,81 @@
+/* ==========================================================================
+   CSS Variables & Foundation
+   ========================================================================== */
+:root {
+  --color-bg-app: #f4f6f8;
+  --color-bg-content: #f5f7fa;
+  --color-bg-surface: #ffffff;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-label: #4B5563;
+  --color-border: #e5e7eb;
+  
+  --color-primary: #0072E5;
+  --color-primary-hover: #006ae0;
+  --color-primary-pressed: #0056b3;
+  --color-active-border: #007BFB;
+  --color-blue: var(--color-primary);
+
+  --ds-chessboard-success-solid-background: #79d79d;
+  --ds-chessboard-success-solid-hover-background: #68cc90;
+  --ds-chessboard-success-pattern-color: #6dd194;
+  --ds-chessboard-success-pattern-surface: #e6f9ed;
+  --ds-chessboard-success-pattern-hover-color: #5fc486;
+  --ds-chessboard-success-pattern-hover-surface: #dcf4e6;
+  --ds-chessboard-success-border: #59b67d;
+  --ds-chessboard-success-text: #155b37;
+  --ds-chessboard-info-solid-background: #8fb8e8;
+  --ds-chessboard-info-solid-hover-background: #7eabe0;
+  --ds-chessboard-info-pattern-color: #7daaf0;
+  --ds-chessboard-info-pattern-surface: #e6f0fc;
+  --ds-chessboard-info-pattern-hover-color: #6c9dde;
+  --ds-chessboard-info-pattern-hover-surface: #dce9f9;
+  --ds-chessboard-info-border: #6691d4;
+  --ds-chessboard-info-text: #214f7c;
+  --ds-chessboard-pattern-stripe-width: 2px;
+  --ds-chessboard-pattern-size: 8px;
+  
+  --color-sidebar-bg: #FFFFFF;
+  --color-sidebar-text: #4B5563;
+  --color-sidebar-active-bg: #F3F4F6;
+  --color-sidebar-active-text: #111827;
+  --color-sidebar-border: #E5E7EB;
+  --sidebar-width: 500px;
+  --sidebar-min-width: 368px;
+  
+  --color-badge-bg: #F3F4F6;
+  --color-badge-text: #4B5563;
+  --color-badge-danger: #EF4444;
+  
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+
+  --font-size-label: 12px;
+  --dropdown-gap: 4px;
+  
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+  
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+*, *::before, *::after { box-sizing: inherit; }

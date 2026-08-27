@@ -1,0 +1,27 @@
+{
+  "name": "@local/s-tracker-component-library-transfer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable snapshot of the S-Tracker vanilla component library and its Storybook.",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./styles": "./src/styles/index.css",
+    "./registry": "./src/ui/components/registry.js"
+  },
+  "scripts": {
+    "storybook": "storybook dev -p 6006 --no-open",
+    "build-storybook": "storybook build",
+    "verify": "node scripts/verify-portability.mjs"
+  },
+  "devDependencies": {
+    "@storybook/addon-a11y": "10.5.5",
+    "@storybook/addon-docs": "10.5.5",
+    "@storybook/html-vite": "10.5.5",
+    "storybook": "10.5.5",
+    "vite": "8.0.16"
+  }
+}

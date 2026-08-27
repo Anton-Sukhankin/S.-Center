@@ -1,0 +1,188 @@
+/* Граница между продуктовой оболочкой S.Center и переносимым модулем шахматки. */
+.s-center-main .s-center-main__body--digital-chessboard {
+  display: block;
+  min-height: calc(100% - 68px);
+  flex: 0 0 auto;
+  padding: 16px;
+  overflow: visible;
+  background: #f4f7fb;
+}
+
+.s-center-main {
+  container-name: digital-chessboard-content;
+  container-type: inline-size;
+}
+
+.s-center-main #digital-chessboard-view,
+.s-center-main #digital-chessboard-root {
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.s-center-main #digital-chessboard-view {
+  overflow: visible;
+}
+
+/* Заголовок раздела и действие «Настройки» принадлежат оболочке S.Center. */
+.s-center-main .dch-view-header {
+  display: none;
+}
+
+.s-center-main .dch-workspace {
+  height: auto;
+  grid-template-rows: auto auto;
+  padding: 0;
+  overflow: visible;
+}
+
+.s-center-main .dch-workspace.is-unsupported {
+  min-height: calc(100vh - 180px);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.s-center-main .dch-work-section,
+.s-center-main .dch-work-body {
+  grid-template-rows: auto auto;
+  overflow: visible;
+}
+
+.s-center-main .dch-work-grid {
+  align-items: start;
+}
+
+.s-center-main .dch-work-card {
+  height: auto;
+}
+
+.s-center-main .dch-matrix-shell {
+  flex: 0 0 auto;
+}
+
+.s-center-main .dch-matrix-scroll {
+  height: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.s-center-main .dch-scroll-indicator.is-vertical {
+  display: none;
+}
+
+/* Исходные breakpoint-правила рассчитаны на полноэкранный модуль. В оболочке
+   доступная ширина зависит от дерева проектов, поэтому те же состояния
+   активируются по ширине контейнера основной области. */
+@container digital-chessboard-content (max-width: 1180px) {
+  .dch-object-selector {
+    overflow-x: auto;
+  }
+
+  .cos-list {
+    width: max-content;
+    grid-template-columns: repeat(5, 220px);
+  }
+
+  .dch-work-parameters dl {
+    gap: 20px;
+  }
+}
+
+@container digital-chessboard-content (max-width: 920px) {
+  .dch-metrics {
+    flex-wrap: wrap;
+  }
+
+  .dch-summary-item {
+    width: 25%;
+    min-width: 0;
+  }
+
+  .dch-summary-actions {
+    width: 100%;
+    margin-left: 0;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .dch-date-popover {
+    width: min(656px, calc(100cqw - 48px));
+    max-height: calc(100dvh - 170px);
+    overflow-y: auto;
+  }
+
+  .dch-work-details {
+    grid-template-columns: minmax(0, 1fr) 57px;
+  }
+
+  .dch-work-parameters {
+    grid-column: 1 / -1;
+  }
+
+  .dch-work-remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@container digital-chessboard-content (max-width: 620px) {
+  .dch-summary-item {
+    width: 50%;
+  }
+
+  .dch-summary-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dch-context-trigger,
+  .dch-compare-button {
+    width: 100%;
+  }
+
+  .dch-segmented button {
+    flex: 1;
+  }
+
+  .dch-calendar-months,
+  .dch-compare-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .dch-work-list-head {
+    display: none;
+  }
+
+  .dch-work-option {
+    grid-template-columns: minmax(0, 1fr) 68px;
+    gap: 6px 12px;
+    padding-block: 10px;
+  }
+
+  .dch-work-option-name {
+    grid-column: 1 / -1;
+  }
+
+  .dch-work-option > span:nth-child(2) {
+    padding-left: 27px;
+  }
+
+  .dch-modal-footer button {
+    min-width: 0;
+    flex: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .s-center-main {
+    height: max(820px, calc(100vh - 80px));
+  }
+
+  .s-center-main .s-center-main__body--digital-chessboard {
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .s-center-main .dch-workspace {
+    padding: 0;
+  }
+}

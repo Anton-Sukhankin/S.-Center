@@ -1,0 +1,63 @@
+.ds-parameter-pair {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 4px;
+}
+
+.ds-parameter-pair__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-label);
+  font-size: var(--font-size-label);
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.ds-parameter-pair__icon {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  place-items: center;
+  color: var(--color-primary);
+}
+
+.ds-parameter-pair__icon .ds-icon,
+.ds-parameter-pair__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ds-parameter-pair__label-text,
+.ds-parameter-pair__value {
+  min-width: 0;
+}
+
+.ds-parameter-pair__value {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.ds-parameter-pair--strong .ds-parameter-pair__value {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.ds-parameter-pair--truncate .ds-parameter-pair__label-text,
+.ds-parameter-pair--truncate .ds-parameter-pair__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-parameter-pair-story {
+  display: grid;
+  width: min(360px, 100%);
+  gap: 20px;
+}

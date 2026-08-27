@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Шахматка — переносимый модуль</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/components/construction-object-selector/construction-object-selector.css">
+    <link rel="stylesheet" href="src/feature/digital-chessboard.css">
+    <link rel="stylesheet" href="src/host/standalone.css">
+</head>
+<body>
+    <main id="digital-chessboard-view" aria-label="Цифровая шахматка">
+        <div id="digital-chessboard-root"></div>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="src/data/construction-objects-data.js"></script>
+    <script src="src/data/digital-chessboard-data.js"></script>
+    <script src="src/components/construction-object-selector/construction-object-selector.js"></script>
+    <script src="src/feature/digital-chessboard.js"></script>
+    <script src="src/host/standalone.js"></script>
+</body>
+</html>

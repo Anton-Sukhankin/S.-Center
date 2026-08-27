@@ -1,0 +1,21 @@
+{
+  "snapshotDate": "2026-08-24",
+  "sourceProject": "S-Tracker",
+  "runtime": "vanilla JavaScript with Vite",
+  "contents": [
+    "Reusable component modules",
+    "Storybook stories and configuration",
+    "Component styles and design tokens",
+    "Empty-state raster assets",
+    "Document-preview SVG icon sprite",
+    "Component-library methodology snapshot"
+  ],
+  "excluded": [
+    "S-Tracker feature runtime",
+    "Product data and domain rules",
+    "node_modules",
+    "Generated Storybook output",
+    "Generated application build"
+  ],
+  "synchronization": "manual snapshot; no automatic connection to the source project"
+}
