@@ -27,8 +27,10 @@ const MATRIX_STICKY_RELEASE_FLOOR_COUNT = 6;
 const WHEEL_SCROLL_TIME_CONSTANT_MS = 65;
 const WHEEL_SCROLL_SETTLE_DISTANCE = 4;
 const WHEEL_SCROLL_MAX_FRAME_MS = 48;
+const WHEEL_GESTURE_IDLE_MS = 180;
 const CELL_HISTORY_TOOLTIP_DELAY_MS = 1000;
-const DEMO_CURRENT_USER = Object.freeze({ displayName: 'Мария Соколова', login: 'm.sokolova' });
+const WORK_FULLSCREEN_TRANSITION_MS = 220;
+const DEMO_CURRENT_USER = Object.freeze({ displayName: 'Соколова Мария Андреевна', login: 'm.sokolova' });
 
 const CELL_STATES = Object.freeze([
   { id: 'no-work', label: 'Работы не ведутся', tone: 'neutral', pattern: 'none' },
@@ -145,9 +147,15 @@ export function createDigitalChessboardFeature(root, options = {}) {
   let workStickyScrollHost = null;
   let workStickyFrame = null;
   let smoothWheelMotion = null;
+  let wheelGestureOwner = null;
+  let fullscreenSession = null;
+  let fullscreenAnimation = null;
   const overrides = new Map();
   const boardApis = new Map();
   const workReadinessRefs = new Map();
+  const workAccordionRefs = new Map();
+  const matrixScrollKeys = new Map();
+  const matrixScrollPositions = new Map();
   const summaryRefs = {};
   const pendingWheelReconciliations = new Map();
   const cellTooltipData = new WeakMap();
@@ -185,7 +193,12 @@ export function createDigitalChessboardFeature(root, options = {}) {
       const firstFloorRow = accordion.querySelector('.ds-chessboard__table tbody tr');
       let nextShift = 0;
 
-      if (accordion.classList.contains('is-expanded') && accordionHeader && matrixScroll && matrixHeader && firstFloorRow) {
+      if (!accordion.classList.contains('is-work-fullscreen')
+        && accordion.classList.contains('is-expanded')
+        && accordionHeader
+        && matrixScroll
+        && matrixHeader
+        && firstFloorRow) {
         const floorRowHeight = firstFloorRow.getBoundingClientRect().height;
         const matrixHeaderHeight = matrixHeader.getBoundingClientRect().height;
         const visibleFloorCount = floorRowHeight > 0
@@ -225,17 +238,41 @@ export function createDigitalChessboardFeature(root, options = {}) {
     return event.deltaY;
   }
 
-  function matrixScrollFromWheelEvent(event) {
+  function matrixScrollFromWheelPath(event) {
     const pathMatch = event.composedPath().find(node => (
       node instanceof Element
       && node.classList.contains('ds-chessboard__scroll')
       && node.closest('.dch2-matrix')
     ));
     if (pathMatch && root.contains(pathMatch)) return pathMatch;
+    return null;
+  }
 
-    return document.elementsFromPoint(event.clientX, event.clientY)
-      .map(element => element.closest('.dch2-matrix .ds-chessboard__scroll'))
-      .find(element => element && root.contains(element)) || null;
+  function wheelEventTimestamp(event) {
+    return Number.isFinite(event.timeStamp) ? event.timeStamp : window.performance.now();
+  }
+
+  function matrixScrollForWheelGesture(event) {
+    const pathMatrix = matrixScrollFromWheelPath(event);
+    const timestamp = wheelEventTimestamp(event);
+    const ownerExpired = !wheelGestureOwner
+      || timestamp < wheelGestureOwner.lastTimestamp
+      || timestamp - wheelGestureOwner.lastTimestamp > WHEEL_GESTURE_IDLE_MS
+      || (wheelGestureOwner.matrixScroll && !wheelGestureOwner.matrixScroll.isConnected);
+
+    if (ownerExpired) {
+      wheelGestureOwner = { matrixScroll: pathMatrix, lastTimestamp: timestamp };
+    } else {
+      wheelGestureOwner.lastTimestamp = timestamp;
+      // A sequence that starts in the outer content remains native even when
+      // scrolling moves the matrix under a stationary pointer. A deliberate
+      // move from one matrix to another, however, changes the inner owner.
+      if (wheelGestureOwner.matrixScroll && pathMatrix && pathMatrix !== wheelGestureOwner.matrixScroll) {
+        wheelGestureOwner = { matrixScroll: pathMatrix, lastTimestamp: timestamp };
+      }
+    }
+
+    return wheelGestureOwner.matrixScroll;
   }
 
   function upwardWorkAlignmentDistance(matrixScroll, outerScroll) {
@@ -281,6 +318,20 @@ export function createDigitalChessboardFeature(root, options = {}) {
     return current + distance * factor;
   }
 
+  function reconcileSmoothTargetsWithActualPositions(motion) {
+    if (motion.direction > 0) {
+      motion.matrixTarget = Math.max(motion.matrixTarget, motion.matrixScroll.scrollTop);
+      motion.outerLeadTarget = Math.max(motion.outerLeadTarget, motion.outerScroll.scrollTop);
+      motion.outerTarget = Math.max(motion.outerTarget, motion.outerScroll.scrollTop);
+      return;
+    }
+    if (motion.direction < 0) {
+      motion.matrixTarget = Math.min(motion.matrixTarget, motion.matrixScroll.scrollTop);
+      motion.outerLeadTarget = Math.min(motion.outerLeadTarget, motion.outerScroll.scrollTop);
+      motion.outerTarget = Math.min(motion.outerTarget, motion.outerScroll.scrollTop);
+    }
+  }
+
   function stepSmoothWheelMotion(timestamp) {
     const motion = smoothWheelMotion;
     if (!motion || destroyed || !motion.matrixScroll.isConnected || !motion.outerScroll.isConnected) {
@@ -293,6 +344,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
       : Math.min(WHEEL_SCROLL_MAX_FRAME_MS, Math.max(1, timestamp - motion.lastTimestamp));
     const factor = 1 - Math.exp(-elapsed / WHEEL_SCROLL_TIME_CONSTANT_MS);
     motion.lastTimestamp = timestamp;
+    reconcileSmoothTargetsWithActualPositions(motion);
     const outerStart = motion.outerScroll.scrollTop;
 
     if (!motion.outerLeadComplete) {
@@ -379,8 +431,10 @@ export function createDigitalChessboardFeature(root, options = {}) {
       smoothWheelMotion.outerTarget = outerScroll.scrollTop;
       smoothWheelMotion.upwardAlignmentRemaining = direction < 0
         ? upwardWorkAlignmentDistance(matrixScroll, outerScroll)
-        : 0;
+          : 0;
     }
+
+    reconcileSmoothTargetsWithActualPositions(smoothWheelMotion);
 
     let remainingDelta = delta;
     if (remainingDelta < 0 && smoothWheelMotion.upwardAlignmentRemaining > 0) {
@@ -454,11 +508,26 @@ export function createDigitalChessboardFeature(root, options = {}) {
 
   function routeMatrixVerticalWheel(event) {
     if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      wheelGestureOwner = null;
       cancelSmoothWheelMotion();
+      cancelPendingWheelReconciliations();
       return;
     }
-    const matrixScroll = matrixScrollFromWheelEvent(event);
-    if (!matrixScroll) return;
+    const matrixScroll = matrixScrollForWheelGesture(event);
+    if (!matrixScroll) {
+      cancelSmoothWheelMotion();
+      cancelPendingWheelReconciliations();
+      return;
+    }
+
+    // Fullscreen is a self-contained work surface. Its matrix keeps native
+    // two-axis scrolling and must not hand the remaining delta to the hidden
+    // outer work list.
+    if (fullscreenSession) {
+      cancelSmoothWheelMotion();
+      cancelPendingWheelReconciliations();
+      return;
+    }
 
     const outerScroll = workStickyScrollHost || root.closest('.s-center-main');
     if (!outerScroll) return;
@@ -478,23 +547,18 @@ export function createDigitalChessboardFeature(root, options = {}) {
     queueSmoothMatrixVerticalDelta(matrixScroll, outerScroll, delta);
   }
 
-  function cancelSmoothWheelOnExternalWheel(event) {
-    if (!matrixScrollFromWheelEvent(event)) cancelSmoothWheelMotion();
-  }
-
   function bindWorkStickyLayers() {
     workStickyScrollHost = root.closest('.s-center-main');
     workStickyScrollHost?.addEventListener('scroll', scheduleWorkStickyLayers, { passive: true });
-    workStickyScrollHost?.addEventListener('wheel', cancelSmoothWheelOnExternalWheel, { capture: true, passive: true });
-    root.addEventListener('wheel', routeMatrixVerticalWheel, { capture: true, passive: false });
+    workStickyScrollHost?.addEventListener('wheel', routeMatrixVerticalWheel, { capture: true, passive: false });
     window.addEventListener('resize', scheduleWorkStickyLayers);
   }
 
   function unbindWorkStickyLayers() {
     workStickyScrollHost?.removeEventListener('scroll', scheduleWorkStickyLayers);
-    workStickyScrollHost?.removeEventListener('wheel', cancelSmoothWheelOnExternalWheel, true);
-    root.removeEventListener('wheel', routeMatrixVerticalWheel, true);
+    workStickyScrollHost?.removeEventListener('wheel', routeMatrixVerticalWheel, true);
     window.removeEventListener('resize', scheduleWorkStickyLayers);
+    wheelGestureOwner = null;
     cancelSmoothWheelMotion();
     cancelPendingWheelReconciliations();
     if (workStickyFrame !== null) window.cancelAnimationFrame(workStickyFrame);
@@ -586,6 +650,59 @@ export function createDigitalChessboardFeature(root, options = {}) {
       id: `display-part-${index + 1}`,
       name: `${object.partLabel} ${index + 1}`,
       isDisplayPlaceholder: true,
+    });
+  }
+
+  function matrixScrollKey(work) {
+    return [
+      context.projectId || model?.projectId || '',
+      context.treeNodeId || context.objectId || object?.id || '',
+      period?.id || '',
+      work.id,
+    ].join(':');
+  }
+
+  function matrixScrollMaximum(scroll) {
+    return Math.max(0, scroll.scrollHeight - scroll.clientHeight);
+  }
+
+  function rememberMatrixScrollPosition(workId) {
+    const scroll = boardApis.get(workId)?.scroll;
+    const key = matrixScrollKeys.get(workId);
+    if (!scroll || !key || scroll.clientHeight <= 0) return false;
+    const maximum = matrixScrollMaximum(scroll);
+    const scrollTop = Math.min(maximum, Math.max(0, scroll.scrollTop));
+    matrixScrollPositions.set(key, {
+      scrollTop,
+      atBottom: maximum - scrollTop <= 1,
+    });
+    return true;
+  }
+
+  function restoreMatrixScrollPosition(workId) {
+    const scroll = boardApis.get(workId)?.scroll;
+    const key = matrixScrollKeys.get(workId);
+    if (!scroll || !key || scroll.clientHeight <= 0) return false;
+    const maximum = matrixScrollMaximum(scroll);
+    const stored = matrixScrollPositions.get(key);
+    const scrollTop = !stored || stored.atBottom
+      ? maximum
+      : Math.min(maximum, Math.max(0, stored.scrollTop));
+    scroll.scrollTop = scrollTop;
+    matrixScrollPositions.set(key, {
+      scrollTop,
+      atBottom: maximum - scrollTop <= 1,
+    });
+    return true;
+  }
+
+  function rememberAllMatrixScrollPositions() {
+    boardApis.forEach((_boardApi, workId) => rememberMatrixScrollPosition(workId));
+  }
+
+  function restoreOpenMatrixScrollPositions() {
+    workAccordionRefs.forEach(reference => {
+      if (reference.accordion.isOpen()) restoreMatrixScrollPosition(reference.work.id);
     });
   }
 
@@ -952,14 +1069,12 @@ export function createDigitalChessboardFeature(root, options = {}) {
     const list = el('div', 'dch2-group-modal__list');
     list.setAttribute('role', 'radiogroup');
     list.setAttribute('aria-label', 'Доступные группы работ');
-    const status = el('p', 'dch2-group-modal__status');
     let search;
 
     const renderList = query => {
       const normalized = String(query || '').trim().toLocaleLowerCase('ru-RU');
       const groups = groupModels().filter(item => !normalized || `${item.name} ${item.description}`.toLocaleLowerCase('ru-RU').includes(normalized));
       list.replaceChildren();
-      status.textContent = `Найдено: ${groups.length} из ${groupModels().length}`;
       groups.forEach(item => {
         const label = el('label', `dch2-group-option${item.id === pendingId ? ' is-selected' : ''}`);
         const radio = el('input');
@@ -983,7 +1098,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     };
 
     search = createInput({ placeholder: 'Найти группу работ', className: 'dch2-group-search', leadingIcon: icon('search', 17), attributes: { 'aria-label': 'Поиск группы работ', autocomplete: 'off' }, onInput: renderList });
-    content.append(search.element, status, list);
+    content.append(search.element, list);
     groupModal = createModal({
       id: 'digital-chessboard-group-picker',
       title: 'Выбор группы работ',
@@ -1140,6 +1255,8 @@ export function createDigitalChessboardFeature(root, options = {}) {
       attributes: { style: `--ds-chessboard-min-width:${MATRIX_ROW_HEADER_WIDTH + columns.length * MATRIX_COLUMN_WIDTH}px` },
       onCellActivate: detail => openCellStatusMenu({ work, detail, cellButton: boardApi.getCellElement(detail.key) }),
     });
+    matrixScrollKeys.set(work.id, matrixScrollKey(work));
+    boardApi.scroll.addEventListener('scroll', () => rememberMatrixScrollPosition(work.id), { passive: true });
     boardApi.element.querySelectorAll('.ds-chessboard__cell:not(:disabled)').forEach(cellButton => {
       cellButton.setAttribute('aria-haspopup', 'menu');
       cellButton.setAttribute('aria-expanded', 'false');
@@ -1171,15 +1288,16 @@ export function createDigitalChessboardFeature(root, options = {}) {
     return legend;
   }
 
-  function createWorkDescription(work, readiness) {
+  function createWorkDescription(work, readiness, groupName) {
     const description = el('span', 'dch2-work-description');
     let readinessValue;
     [
       ['Готовность', `${readiness}%`],
       ['Плановый срок', `${work.plannedStart}–${work.plannedEnd}`],
       ['Подрядчик', work.contractor],
-    ].forEach(([label, value]) => {
-      const item = el('span', 'dch2-work-description__item');
+      ['Группа работ', groupName, 'dch2-work-description__item--fullscreen'],
+    ].forEach(([label, value, className = '']) => {
+      const item = el('span', `dch2-work-description__item ${className}`.trim());
       const valueElement = el('span', 'dch2-work-description__value', value);
       if (label === 'Готовность') valueElement.classList.toggle('is-complete', readiness === 100);
       item.append(el('span', 'dch2-work-description__label', `${label}:`), valueElement);
@@ -1189,9 +1307,278 @@ export function createDigitalChessboardFeature(root, options = {}) {
     return { element: description, readinessValue };
   }
 
-  function createWorkAccordion(work, index) {
+  function prefersReducedMotion() {
+    return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function cancelFullscreenAnimation() {
+    const animation = fullscreenAnimation;
+    fullscreenAnimation = null;
+    animation?.cancel();
+  }
+
+  function workFullscreenIcon(active) {
+    return createDocumentPreviewIcon(active ? 'minimize-2' : 'maximize-2', 18);
+  }
+
+  function syncWorkFullscreenToggle(reference, active) {
+    const action = active ? 'Вернуть в список работ' : 'Открыть работу на весь экран';
+    reference.fullscreenButton.replaceChildren(workFullscreenIcon(active));
+    reference.fullscreenButton.setAttribute('aria-label', `${action}: ${reference.work.code} ${reference.work.name}`);
+    reference.fullscreenButton.setAttribute('aria-pressed', String(active));
+    reference.fullscreenButton.title = action;
+  }
+
+  function animateWorkFullscreen(reference, sourceRect, entering = true) {
+    cancelFullscreenAnimation();
+    if (prefersReducedMotion() || !sourceRect?.width || !sourceRect?.height) return Promise.resolve();
+
+    const targetWidth = Math.max(1, window.innerWidth);
+    const targetHeight = Math.max(1, window.innerHeight);
+    const transform = `translate3d(${sourceRect.left}px, ${sourceRect.top}px, 0) scale(${sourceRect.width / targetWidth}, ${sourceRect.height / targetHeight})`;
+    const keyframes = entering
+      ? [
+        { opacity: 0.82, transform, transformOrigin: 'top left' },
+        { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)', transformOrigin: 'top left' },
+      ]
+      : [
+        { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)', transformOrigin: 'top left' },
+        { opacity: 0.82, transform, transformOrigin: 'top left' },
+      ];
+    const animation = reference.element.animate(keyframes, {
+      duration: WORK_FULLSCREEN_TRANSITION_MS,
+      easing: entering ? 'cubic-bezier(.2,.75,.25,1)' : 'cubic-bezier(.4,0,.6,1)',
+      fill: 'both',
+    });
+    fullscreenAnimation = animation;
+    return animation.finished.catch(() => {}).finally(() => {
+      if (fullscreenAnimation === animation) fullscreenAnimation = null;
+      // `fill: both` keeps the last keyframe active after `finished` resolves.
+      // Release that effect before fullscreen classes are removed so the
+      // accordion returns to its normal slot instead of retaining exit scale.
+      animation.cancel();
+    });
+  }
+
+  function fullscreenFocusableElements() {
+    const reference = fullscreenSession && workAccordionRefs.get(fullscreenSession.workId);
+    if (!reference) return [];
+    const roots = [reference.element];
+    if (cellStatusMenu?.element?.isConnected && !cellStatusMenu.element.hidden) roots.push(cellStatusMenu.element);
+    return roots.flatMap(container => [...container.querySelectorAll(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    )]).filter(element => !element.hidden && element.getClientRects().length > 0);
+  }
+
+  function handleWorkFullscreenKeydown(event) {
+    if (!fullscreenSession) return;
+    if (event.key === 'Escape') {
+      if (cellStatusMenu) return;
+      event.preventDefault();
+      exitWorkFullscreen();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = fullscreenFocusableElements();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function restoreWorkReference(reference, session = fullscreenSession) {
+    if (!reference) return;
+    rememberMatrixScrollPosition(reference.work.id);
+    reference.element.classList.remove('is-work-fullscreen');
+    reference.element.removeAttribute('role');
+    reference.element.removeAttribute('aria-modal');
+    reference.element.removeAttribute('aria-labelledby');
+    reference.element.style.removeProperty('--dch2-work-sticky-shift');
+    reference.slot.classList.remove('has-fullscreen-work');
+    reference.slot.style.removeProperty('height');
+    reference.accordion.trigger.removeAttribute('aria-disabled');
+    reference.accordion.trigger.removeAttribute('tabindex');
+    reference.accordion.setOpen(session?.originalOpenStates.get(reference.work.id) ?? reference.accordion.isOpen());
+    if (reference.accordion.isOpen()) restoreMatrixScrollPosition(reference.work.id);
+    syncWorkFullscreenToggle(reference, false);
+  }
+
+  function activateWorkFullscreenReference(reference, sourceRect, { animate = true, focus = true } = {}) {
+    rememberMatrixScrollPosition(reference.work.id);
+    reference.slot.style.height = `${Math.max(1, sourceRect.height)}px`;
+    reference.slot.classList.add('has-fullscreen-work');
+    reference.accordion.setOpen(true);
+    reference.element.style.setProperty('--dch2-work-sticky-shift', '0px');
+    reference.element.classList.remove('is-work-sticky');
+    reference.element.classList.add('is-work-fullscreen');
+    restoreMatrixScrollPosition(reference.work.id);
+    reference.element.setAttribute('role', 'dialog');
+    reference.element.setAttribute('aria-modal', 'true');
+    reference.element.setAttribute('aria-labelledby', reference.accordion.titleElement.id);
+    reference.accordion.trigger.setAttribute('aria-disabled', 'true');
+    reference.accordion.trigger.tabIndex = -1;
+    syncWorkFullscreenToggle(reference, true);
+    fullscreenSession.workId = reference.work.id;
+    fullscreenSession.originRect = sourceRect;
+    operationStatus && (operationStatus.textContent = `Работа ${reference.work.code} ${reference.work.name} открыта на весь экран.`);
+    if (focus) reference.fullscreenButton.focus({ preventScroll: true });
+    if (animate) animateWorkFullscreen(reference, sourceRect, true);
+  }
+
+  function clearAbandonedWorkFullscreenState() {
+    cancelFullscreenAnimation();
+    workAccordionRefs.forEach(reference => {
+      if (reference.element.classList.contains('is-work-fullscreen') || reference.slot.classList.contains('has-fullscreen-work')) {
+        restoreWorkReference(reference, null);
+      }
+    });
+    root.classList.remove('has-work-fullscreen');
+    workStickyScrollHost?.classList.remove('is-dch2-work-fullscreen', 'is-dch2-work-fullscreen-restoring');
+    document.removeEventListener('keydown', handleWorkFullscreenKeydown, true);
+  }
+
+  function enterWorkFullscreen(workId) {
+    const reference = workAccordionRefs.get(workId);
+    if (!reference || fullscreenSession) return;
+    clearAbandonedWorkFullscreenState();
+    closeOverlays();
+    cancelSmoothWheelMotion();
+    cancelPendingWheelReconciliations();
+    const sourceRect = reference.element.getBoundingClientRect();
+    fullscreenSession = {
+      workId,
+      originRect: sourceRect,
+      outerScrollTop: workStickyScrollHost?.scrollTop ?? 0,
+      returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : reference.fullscreenButton,
+      originalOpenStates: new Map([...workAccordionRefs].map(([id, item]) => [id, item.accordion.isOpen()])),
+    };
+    root.classList.add('has-work-fullscreen');
+    workStickyScrollHost?.classList.add('is-dch2-work-fullscreen');
+    document.addEventListener('keydown', handleWorkFullscreenKeydown, true);
+    activateWorkFullscreenReference(reference, sourceRect);
+  }
+
+  function switchFullscreenWork(nextIndex) {
+    if (!fullscreenSession || fullscreenSession.closing || fullscreenSession.switching) return;
+    const session = fullscreenSession;
+    const references = [...workAccordionRefs.values()];
+    const nextReference = references[nextIndex];
+    const currentReference = workAccordionRefs.get(session.workId);
+    if (!nextReference || nextReference === currentReference) return;
+
+    session.switching = true;
+    try {
+      closeOverlays();
+      cancelFullscreenAnimation();
+      const sourceRect = nextReference.element.getBoundingClientRect();
+      const outerScrollTop = workStickyScrollHost?.scrollTop;
+
+      // Prepare the next fixed surface before releasing the current one so
+      // the viewport never exposes the underlying accordion list between jobs.
+      activateWorkFullscreenReference(nextReference, sourceRect, { animate: false, focus: false });
+      restoreWorkReference(currentReference, session);
+      if (workStickyScrollHost && Number.isFinite(outerScrollTop)) workStickyScrollHost.scrollTop = outerScrollTop;
+      session.returnFocus = nextReference.fullscreenButton;
+      nextReference.fullscreenButton.focus({ preventScroll: true });
+    } finally {
+      if (fullscreenSession === session) session.switching = false;
+    }
+  }
+
+  async function exitWorkFullscreen({ immediate = false, restoreFocus = true } = {}) {
+    if (!fullscreenSession) return;
+    if (fullscreenSession.closing && !immediate) return;
+    fullscreenSession.closing = true;
+    const session = fullscreenSession;
+    const reference = workAccordionRefs.get(session.workId);
+    cancelSmoothWheelMotion();
+    cancelPendingWheelReconciliations();
+    closeOverlays();
+    if (reference && !immediate) {
+      if (workStickyScrollHost) workStickyScrollHost.scrollTop = session.outerScrollTop;
+      await animateWorkFullscreen(reference, session.originRect, false);
+    }
+    if (fullscreenSession !== session) return;
+    cancelFullscreenAnimation();
+    workAccordionRefs.forEach(item => restoreWorkReference(item, session));
+    root.classList.remove('has-work-fullscreen');
+    workStickyScrollHost?.classList.remove('is-dch2-work-fullscreen');
+    workStickyScrollHost?.classList.add('is-dch2-work-fullscreen-restoring');
+    document.removeEventListener('keydown', handleWorkFullscreenKeydown, true);
+    fullscreenSession = null;
+    if (workStickyScrollHost) {
+      workStickyScrollHost.scrollTop = session.outerScrollTop;
+      if (restoreFocus && session.returnFocus?.isConnected) session.returnFocus.focus({ preventScroll: true });
+      window.requestAnimationFrame(() => {
+        if (!workStickyScrollHost) return;
+        if (destroyed || fullscreenSession) {
+          workStickyScrollHost.classList.remove('is-dch2-work-fullscreen-restoring');
+          return;
+        }
+        workStickyScrollHost.scrollTop = session.outerScrollTop;
+        window.requestAnimationFrame(() => {
+          if (!workStickyScrollHost) return;
+          if (destroyed || fullscreenSession) {
+            workStickyScrollHost.classList.remove('is-dch2-work-fullscreen-restoring');
+            return;
+          }
+          workStickyScrollHost.scrollTop = session.outerScrollTop;
+          workStickyScrollHost.classList.remove('is-dch2-work-fullscreen-restoring');
+          scheduleWorkStickyLayers();
+        });
+      });
+    } else {
+      scheduleWorkStickyLayers();
+      if (restoreFocus && session.returnFocus?.isConnected) session.returnFocus.focus({ preventScroll: true });
+    }
+    operationStatus && (operationStatus.textContent = 'Полноэкранный режим работы закрыт.');
+  }
+
+  function createWorkFullscreenNavigation(work, index, total) {
+    const navigation = el('nav', 'dch2-work-fullscreen-navigation');
+    navigation.setAttribute('aria-label', 'Переключение между работами группы');
+    const previous = createButton({
+      icon: createDocumentPreviewIcon('chevron-left', 18),
+      iconOnly: true,
+      ariaLabel: 'Предыдущая работа',
+      variant: 'outlined',
+      size: 'small',
+      disabled: index === 0,
+      className: 'dch2-work-fullscreen-navigation__button',
+      onClick: event => {
+        event.stopPropagation();
+        switchFullscreenWork(index - 1);
+      },
+    });
+    const position = el('span', 'dch2-work-fullscreen-navigation__position', `${index + 1} из ${total}`);
+    position.setAttribute('aria-label', `Работа ${index + 1} из ${total}`);
+    const next = createButton({
+      icon: createDocumentPreviewIcon('chevron-right', 18),
+      iconOnly: true,
+      ariaLabel: 'Следующая работа',
+      variant: 'outlined',
+      size: 'small',
+      disabled: index === total - 1,
+      className: 'dch2-work-fullscreen-navigation__button',
+      onClick: event => {
+        event.stopPropagation();
+        switchFullscreenWork(index + 1);
+      },
+    });
+    navigation.append(previous, position, next);
+    return navigation;
+  }
+
+  function createWorkAccordion(work, index, group) {
     const readiness = readinessForWork(work);
-    const description = createWorkDescription(work, readiness);
+    const description = createWorkDescription(work, readiness, group.name);
     const legendPanel = el('aside', 'dch2-work-legend');
     legendPanel.setAttribute('aria-label', `Обозначения статусов работы «${work.name}»`);
     legendPanel.append(createAccordionLegend());
@@ -1210,19 +1597,62 @@ export function createDigitalChessboardFeature(root, options = {}) {
       headingLevel: 3,
       onToggle: open => {
         if (!open) closeCellStatusMenu();
+        if (open) restoreMatrixScrollPosition(work.id);
         scheduleWorkStickyLayers();
       },
+    });
+    accordion.leading.querySelector('.ds-accordion__metaphor')?.append(
+      icon('briefcase-business', 18, 'dch2-work-fullscreen-metaphor'),
+    );
+    const slot = el('div', 'dch2-work-slot');
+    const fullscreenNavigation = createWorkFullscreenNavigation(work, index, group.works.length);
+    const fullscreenButton = createButton({
+      icon: workFullscreenIcon(false),
+      iconOnly: true,
+      ariaLabel: `Открыть работу на весь экран: ${work.code} ${work.name}`,
+      variant: 'outlined',
+      size: 'small',
+      className: 'dch2-work-fullscreen-toggle',
+      attributes: {
+        'aria-pressed': 'false',
+        title: 'Открыть работу на весь экран',
+      },
+      onClick: event => {
+        event.stopPropagation();
+        if (fullscreenSession?.closing || fullscreenSession?.switching) return;
+        if (fullscreenSession?.workId === work.id) exitWorkFullscreen();
+        else if (!fullscreenSession) enterWorkFullscreen(work.id);
+      },
+    });
+    accordion.trigger.addEventListener('click', event => {
+      if (accordion.isOpen()) rememberMatrixScrollPosition(work.id);
+      if (fullscreenSession?.workId !== work.id) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+    accordion.header.append(fullscreenNavigation, fullscreenButton);
+    slot.append(accordion.element);
+    workAccordionRefs.set(work.id, {
+      accordion,
+      element: accordion.element,
+      fullscreenButton,
+      fullscreenNavigation,
+      index,
+      slot,
+      work,
     });
     workReadinessRefs.set(work.id, {
       valueElement: description.readinessValue,
       accordionElement: accordion.element,
     });
-    return accordion.element;
+    return slot;
   }
 
   function createChessboardPanel() {
     boardApis.clear();
     workReadinessRefs.clear();
+    workAccordionRefs.clear();
+    matrixScrollKeys.clear();
     const panel = el('div', 'dch2-chessboard-view');
     const group = activeGroup();
     panel.append(createSummary(), createGroupControl());
@@ -1231,7 +1661,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     worksHeading.id = 'dch2-works-title';
     works.setAttribute('aria-labelledby', worksHeading.id);
     works.append(worksHeading);
-    group.works.forEach((work, index) => works.append(createWorkAccordion(work, index)));
+    group.works.forEach((work, index) => works.append(createWorkAccordion(work, index, group)));
     panel.append(works);
     operationStatus = el('span', 'ds-visually-hidden');
     operationStatus.setAttribute('role', 'status');
@@ -1296,6 +1726,8 @@ export function createDigitalChessboardFeature(root, options = {}) {
 
   function render() {
     if (destroyed) return;
+    rememberAllMatrixScrollPositions();
+    if (fullscreenSession) exitWorkFullscreen({ immediate: true, restoreFocus: false });
     cancelSmoothWheelMotion();
     cancelPendingWheelReconciliations();
     closeOverlays();
@@ -1311,11 +1743,17 @@ export function createDigitalChessboardFeature(root, options = {}) {
       ],
       onChange: value => {
         activeTab = value;
-        if (value !== 'chessboard') closeOverlays();
+        if (value !== 'chessboard') {
+          if (fullscreenSession) exitWorkFullscreen({ immediate: true, restoreFocus: false });
+          closeOverlays();
+        } else {
+          restoreOpenMatrixScrollPositions();
+        }
         scheduleWorkStickyLayers();
       },
     });
     root.replaceChildren(tabs.element);
+    if (activeTab === 'chessboard') restoreOpenMatrixScrollPositions();
     hydrateAdapterIcons();
     scheduleWorkStickyLayers();
   }
@@ -1339,6 +1777,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     closeOverlays,
     destroy() {
       if (destroyed) return;
+      if (fullscreenSession) exitWorkFullscreen({ immediate: true, restoreFocus: false });
       closeOverlays();
       groupModal?.element?.remove();
       unbindWorkStickyLayers();

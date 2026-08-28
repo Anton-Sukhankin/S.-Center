@@ -138,12 +138,45 @@ function createWorkspace(onOpenSettings, settingsDrawerId, onChessboardContextCh
     attributes: { 'aria-label': 'Поиск по проектам', autocomplete: 'off' },
     onInput: value => tree.update({ query: value }),
   });
-  sidebarHeader.append(sidebarTitle, search.element);
+  const searchRow = el('div', 's-center-sidebar__search-row');
+  let isSidebarCollapsed = false;
+  let resizer;
+  const collapseButton = createButton({
+    icon: libraryIcon('chevron-left', icons.chevronLeft, 18),
+    iconOnly: true,
+    ariaLabel: 'Свернуть панель навигации',
+    variant: 'outlined',
+    size: 'small',
+    className: 's-center-sidebar__collapse-button',
+    attributes: {
+      'aria-controls': sidebar.id,
+      'aria-expanded': 'true',
+      title: 'Свернуть панель навигации',
+    },
+    onClick: () => {
+      isSidebarCollapsed = !isSidebarCollapsed;
+      const actionLabel = isSidebarCollapsed
+        ? 'Развернуть панель навигации'
+        : 'Свернуть панель навигации';
+      workspace.classList.toggle('is-sidebar-collapsed', isSidebarCollapsed);
+      collapseButton.setAttribute('aria-expanded', String(!isSidebarCollapsed));
+      collapseButton.setAttribute('aria-label', actionLabel);
+      collapseButton.title = actionLabel;
+      collapseButton.replaceChildren(libraryIcon(
+        isSidebarCollapsed ? 'chevron-right' : 'chevron-left',
+        isSidebarCollapsed ? icons.chevronRight : icons.chevronLeft,
+        18,
+      ));
+      resizer?.setDisabled(isSidebarCollapsed);
+    },
+  });
+  searchRow.append(search.element, collapseButton);
+  sidebarHeader.append(sidebarTitle, searchRow);
   const treeScroller = el('div', 's-center-tree-scroller');
   treeScroller.append(tree.element);
   sidebar.append(sidebarHeader, treeScroller);
 
-  const resizer = createResizeHandle({
+  resizer = createResizeHandle({
     label: 'Изменить ширину списка проектов',
     value: 332,
     defaultValue: 332,

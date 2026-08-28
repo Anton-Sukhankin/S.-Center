@@ -53,6 +53,12 @@ export const icons = {
     { tag: 'circle', cx: 11, cy: 11, r: 7 },
     { d: 'm20 20-4-4' },
   ], { size: 18 }),
+  chevronLeft: () => createSvgIcon([
+    { d: 'm15 18-6-6 6-6' },
+  ], { size: 18 }),
+  chevronRight: () => createSvgIcon([
+    { d: 'm9 18 6-6-6-6' },
+  ], { size: 18 }),
   resize: () => createSvgIcon([
     { d: 'm9 7-4 5 4 5' },
     { d: 'm15 7 4 5-4 5' },

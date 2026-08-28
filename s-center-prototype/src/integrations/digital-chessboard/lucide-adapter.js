@@ -5,6 +5,12 @@
 
   const NS = 'http://www.w3.org/2000/svg';
   const iconShapes = {
+    'briefcase-business': [
+      ['path', { d: 'M12 12h.01' }],
+      ['path', { d: 'M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2' }],
+      ['path', { d: 'M22 13a18.15 18.15 0 0 1-20 0' }],
+      ['rect', { x: '2', y: '6', width: '20', height: '14', rx: '2' }],
+    ],
     'building-2': [
       ['path', { d: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18' }],
       ['path', { d: 'M6 12H4a2 2 0 0 0-2 2v8h16V8a2 2 0 0 0-2-2h-2' }],

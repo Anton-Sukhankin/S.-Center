@@ -12,10 +12,10 @@
     });
 
     const DEMO_USERS = Object.freeze([
-        Object.freeze({ displayName: 'Мария Соколова', login: 'm.sokolova' }),
-        Object.freeze({ displayName: 'Алексей Воронов', login: 'a.voronov' }),
-        Object.freeze({ displayName: 'Ирина Белова', login: 'i.belova' }),
-        Object.freeze({ displayName: 'Денис Орлов', login: 'd.orlov' })
+        Object.freeze({ displayName: 'Соколова Мария Андреевна', login: 'm.sokolova' }),
+        Object.freeze({ displayName: 'Воронов Алексей Игоревич', login: 'a.voronov' }),
+        Object.freeze({ displayName: 'Белова Ирина Павловна', login: 'i.belova' }),
+        Object.freeze({ displayName: 'Орлов Денис Сергеевич', login: 'd.orlov' })
     ]);
 
     if (!window.constructionObjectsData || typeof window.constructionObjectsData.getAll !== 'function') {
@@ -396,6 +396,8 @@
                         if ([STATUS.IN_PROGRESS, STATUS.COMPLETED, STATUS.DELAYED].includes(cell.status)) {
                             if (!cell.lastChange?.changedBy?.displayName || !cell.lastChange?.changedBy?.login || !cell.lastChange?.changedAt) {
                                 errors.push(`${object.id}/${period.id}/${work.id}: для рабочего статуса отсутствуют демонстрационные метаданные изменения.`);
+                            } else if (cell.lastChange.changedBy.displayName.trim().split(/\s+/).length !== 3) {
+                                errors.push(`${object.id}/${period.id}/${work.id}: автор последнего изменения должен быть указан в формате «Фамилия Имя Отчество».`);
                             }
                         }
                     });

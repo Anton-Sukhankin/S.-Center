@@ -185,11 +185,25 @@ a {
 
 .s-center-workspace {
   --s-center-sidebar-width: 332px;
+  --s-center-sidebar-padding-start: 13px;
+  --s-center-sidebar-padding-end: 23px;
+  --s-center-sidebar-collapse-button-size: 32px;
+  --s-center-sidebar-collapsed-width: calc(
+    var(--s-center-sidebar-padding-start)
+    + var(--s-center-sidebar-collapse-button-size)
+    + var(--s-center-sidebar-padding-end)
+  );
+
   height: calc(100vh - 80px);
   display: grid;
   grid-template-columns: var(--s-center-sidebar-width) 8px minmax(0, 1fr);
   min-height: 0;
   background: #fff;
+  transition: grid-template-columns 180ms ease;
+}
+
+.s-center-workspace.is-sidebar-collapsed {
+  grid-template-columns: var(--s-center-sidebar-collapsed-width) 0 minmax(0, 1fr);
 }
 
 .s-center-sidebar {
@@ -203,7 +217,7 @@ a {
 
 .s-center-sidebar__header {
   flex: 0 0 auto;
-  padding: 17px 23px 5px 13px;
+  padding: 17px var(--s-center-sidebar-padding-end) 5px var(--s-center-sidebar-padding-start);
 }
 
 .s-center-sidebar__title-row {
@@ -225,6 +239,67 @@ a {
   color: #b7bbc2;
   font-size: 14px;
   line-height: 20px;
+}
+
+.s-center-sidebar__search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.s-center-project-search.ds-field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.s-center-sidebar__collapse-button.ds-button {
+  width: var(--s-center-sidebar-collapse-button-size);
+  height: var(--s-center-sidebar-collapse-button-size);
+  min-height: var(--s-center-sidebar-collapse-button-size);
+  flex: 0 0 var(--s-center-sidebar-collapse-button-size);
+  padding: 0;
+  border-color: #d8dce1;
+  border-radius: 7px;
+  color: #68717f;
+  background: #fff;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.s-center-sidebar__collapse-button.ds-button:hover {
+  border-color: #93c5fd;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.s-center-sidebar__collapse-button.ds-button:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.s-center-workspace.is-sidebar-collapsed .s-center-sidebar {
+  border-right: 1px solid var(--s-center-border);
+}
+
+.s-center-workspace.is-sidebar-collapsed .s-center-project-search,
+.s-center-workspace.is-sidebar-collapsed .s-center-tree-scroller {
+  display: none;
+}
+
+.s-center-workspace.is-sidebar-collapsed .s-center-sidebar__title-row {
+  height: 20px;
+  visibility: hidden;
+  overflow: hidden;
+}
+
+.s-center-workspace.is-sidebar-collapsed .s-center-sidebar__search-row {
+  gap: 0;
+}
+
+.s-center-workspace.is-sidebar-collapsed .s-center-resizer.ds-resize-handle {
+  width: 0;
+  min-width: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .s-center-project-search.ds-field {
@@ -553,6 +628,10 @@ a {
   .s-center-sidebar {
     height: min(58vh, 560px);
     border-bottom: 1px solid var(--s-center-border);
+  }
+
+  .s-center-workspace.is-sidebar-collapsed .s-center-sidebar {
+    height: calc(17px + 20px + 10px + var(--s-center-sidebar-collapse-button-size) + 5px);
   }
 
   .s-center-resizer.ds-resize-handle {
