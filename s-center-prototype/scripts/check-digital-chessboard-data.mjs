@@ -109,6 +109,7 @@ export async function checkDigitalChessboardData() {
   let adjacentGroupCount = 0;
   let objectProfileCount = 0;
   const residentialSectionCounts = [];
+  const contractorNames = new Set();
 
   if (fixedSectionContexts.length !== 3) {
     errors.push(`В первой очереди Алхимово ожидалось 3 дома, найдено ${fixedSectionContexts.length}.`);
@@ -136,6 +137,12 @@ export async function checkDigitalChessboardData() {
         errors.push(`${context.treeNodeId}/${object.id}: отсутствует текущий период.`);
         return;
       }
+      period.works.forEach((work) => {
+        contractorNames.add(work.contractor);
+        if (!/^ООО «[^»]+»$/.test(work.contractor)) {
+          errors.push(`${context.treeNodeId}/${object.id}/${work.id}: подрядчик «${work.contractor}» не содержит юридическую форму ООО.`);
+        }
+      });
       const workCount = Math.min(period.works.length, Math.max(0, Number(object.workCount) || 0));
       const completedIndexes = period.works
         .map((work, index) => (work.completion === 100 ? index : -1))
@@ -168,6 +175,16 @@ export async function checkDigitalChessboardData() {
   if (uniqueResidentialSectionCounts.length < 4) {
     errors.push(`Недостаточное разнообразие секций жилых домов: ${uniqueResidentialSectionCounts.join(', ')}.`);
   }
+  const contractorLengths = [...contractorNames].map(name => name.length);
+  const uniqueContractorLengths = new Set(contractorLengths);
+  const shortestContractor = Math.min(...contractorLengths);
+  const longestContractor = Math.max(...contractorLengths);
+  if (contractorNames.size < 20 || uniqueContractorLengths.size < 10) {
+    errors.push(`Недостаточное разнообразие подрядчиков: ${contractorNames.size} названий, ${uniqueContractorLengths.size} вариантов длины.`);
+  }
+  if (shortestContractor > 14 || longestContractor < 36) {
+    errors.push(`Диапазон длины подрядчиков не включает короткие и длинные значения: ${shortestContractor}–${longestContractor} символов.`);
+  }
   if (errors.length) throw new Error(`Проверка распределения завершённых работ:\n${errors.join('\n')}`);
-  console.log(`Распределение завершённых работ: ${contexts.length} контекста, ${objectProfileCount} профилей объектов, ${groupCount} групп, ${adjacentGroupCount} групп с допустимой соседней парой; первая очередь Алхимово: 15 секций в ${fixedSectionContexts.length} домах; остальные проверенные профили: ${uniqueResidentialSectionCounts.join(', ')} секций.`);
+  console.log(`Распределение завершённых работ: ${contexts.length} контекста, ${objectProfileCount} профилей объектов, ${groupCount} групп, ${adjacentGroupCount} групп с допустимой соседней парой; ${contractorNames.size} подрядчиков ООО длиной ${shortestContractor}–${longestContractor} символов; первая очередь Алхимово: 15 секций в ${fixedSectionContexts.length} домах; остальные проверенные профили: ${uniqueResidentialSectionCounts.join(', ')} секций.`);
 }

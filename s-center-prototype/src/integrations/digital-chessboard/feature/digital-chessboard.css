@@ -449,6 +449,29 @@
   white-space: nowrap;
 }
 
+.dch2-work-accordion:not(.is-work-fullscreen) .dch2-work-description {
+  gap: 8px;
+}
+
+.dch2-work-accordion:not(.is-work-fullscreen) .dch2-work-description__item--readiness {
+  width: 104px;
+}
+
+.dch2-work-accordion:not(.is-work-fullscreen) .dch2-work-description__item--period {
+  width: 224px;
+}
+
+.dch2-work-accordion:not(.is-work-fullscreen) .dch2-work-description__item--contractor {
+  width: 400px;
+  overflow: hidden;
+}
+
+.dch2-work-accordion:not(.is-work-fullscreen) .dch2-work-description__item--contractor .dch2-work-description__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .dch2-work-description__item--fullscreen { display: none; }
 
 .dch2-work-description__label { color: var(--color-text-label); }
@@ -476,7 +499,6 @@
 }
 
 .dch2-work-accordion:hover > .ds-accordion__header > .dch2-work-fullscreen-toggle,
-.dch2-work-accordion:focus-within > .ds-accordion__header > .dch2-work-fullscreen-toggle,
 .dch2-work-fullscreen-toggle:focus-visible {
   opacity: 1;
   pointer-events: auto;
@@ -1039,7 +1061,6 @@
   .dch2-group-control__details { grid-template-columns: 1fr; }
   .dch2-group-control__item { border-right: 0; border-bottom: 1px solid #e2e8f0; }
   .dch2-group-control__item:last-child { border-bottom: 0; }
-  .dch2-work-description { gap: 10px; }
   .dch2-work-legend .dch2-accordion-legend { grid-template-columns: 1fr; }
 }
 

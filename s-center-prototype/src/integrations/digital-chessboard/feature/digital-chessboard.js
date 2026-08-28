@@ -23,7 +23,7 @@ const MIN_SECTION_COUNT = 4;
 const MAX_SECTION_COUNT = 15;
 const MATRIX_ROW_HEADER_WIDTH = 92;
 const MATRIX_COLUMN_WIDTH = 72;
-const MATRIX_STICKY_RELEASE_FLOOR_COUNT = 6;
+const MATRIX_STICKY_MIN_VISIBLE_FLOOR_COUNT = 8;
 const WHEEL_SCROLL_TIME_CONSTANT_MS = 65;
 const WHEEL_SCROLL_SETTLE_DISTANCE = 4;
 const WHEEL_SCROLL_MAX_FRAME_MS = 48;
@@ -201,10 +201,9 @@ export function createDigitalChessboardFeature(root, options = {}) {
         && firstFloorRow) {
         const floorRowHeight = firstFloorRow.getBoundingClientRect().height;
         const matrixHeaderHeight = matrixHeader.getBoundingClientRect().height;
-        const visibleFloorCount = floorRowHeight > 0
-          ? Math.floor((matrixScroll.clientHeight - matrixHeaderHeight + 0.5) / floorRowHeight)
-          : 0;
-        const maxShift = Math.max(0, (visibleFloorCount - MATRIX_STICKY_RELEASE_FLOOR_COUNT) * floorRowHeight);
+        const visibleFloorViewportHeight = Math.max(0, matrixScroll.clientHeight - matrixHeaderHeight);
+        const minimumVisibleFloorHeight = MATRIX_STICKY_MIN_VISIBLE_FLOOR_COUNT * floorRowHeight;
+        const maxShift = Math.max(0, visibleFloorViewportHeight - minimumVisibleFloorHeight);
         const naturalHeaderTop = accordionHeader.getBoundingClientRect().top - currentShift;
         nextShift = Math.min(maxShift, Math.max(0, stickyTop - naturalHeaderTop));
       }
@@ -287,6 +286,46 @@ export function createDigitalChessboardFeature(root, options = {}) {
     );
   }
 
+  function workStickyShift(matrixScroll) {
+    const accordion = matrixScroll.closest('.dch2-work-accordion');
+    if (!accordion?.classList.contains('is-expanded')) return 0;
+    return Math.max(
+      0,
+      Number.parseFloat(accordion.style.getPropertyValue('--dch2-work-sticky-shift')) || 0,
+    );
+  }
+
+  function upwardExpansionTarget(matrixScroll, outerScroll, alignmentDistance = 0) {
+    const alignedOuterPosition = Math.max(0, outerScroll.scrollTop - alignmentDistance);
+    return Math.max(
+      0,
+      alignedOuterPosition - Math.min(workStickyShift(matrixScroll), alignedOuterPosition),
+    );
+  }
+
+  function splitCoupledUpwardDelta(delta, matrixCapacity, expansionCapacity) {
+    const safeMatrixCapacity = Math.max(0, matrixCapacity);
+    const safeExpansionCapacity = Math.max(0, expansionCapacity);
+    const coupledCapacity = safeMatrixCapacity + safeExpansionCapacity;
+    if (delta >= 0 || safeMatrixCapacity <= 0 || safeExpansionCapacity <= 0 || coupledCapacity <= 0) {
+      return {
+        coupledDistance: 0,
+        expansionDistance: 0,
+        matrixDistance: 0,
+        remainingDelta: delta,
+      };
+    }
+
+    const coupledDistance = Math.min(-delta, coupledCapacity);
+    const matrixDistance = coupledDistance * (safeMatrixCapacity / coupledCapacity);
+    return {
+      coupledDistance,
+      expansionDistance: coupledDistance - matrixDistance,
+      matrixDistance,
+      remainingDelta: delta + coupledDistance,
+    };
+  }
+
   function applyMatrixVerticalDelta(matrixScroll, outerScroll, delta) {
     const outerStart = outerScroll.scrollTop;
     let remainingDelta = delta;
@@ -298,7 +337,18 @@ export function createDigitalChessboardFeature(root, options = {}) {
     }
 
     const matrixMaximum = Math.max(0, matrixScroll.scrollHeight - matrixScroll.clientHeight);
-    const matrixStart = Math.min(matrixMaximum, Math.max(0, matrixScroll.scrollTop));
+    let matrixStart = Math.min(matrixMaximum, Math.max(0, matrixScroll.scrollTop));
+    if (remainingDelta < 0 && matrixStart > 0) {
+      const expansionCapacity = Math.min(workStickyShift(matrixScroll), outerScroll.scrollTop);
+      const split = splitCoupledUpwardDelta(remainingDelta, matrixStart, expansionCapacity);
+      if (split.coupledDistance > 0) {
+        matrixScroll.scrollTop = Math.max(0, matrixStart - split.matrixDistance);
+        outerScroll.scrollTop = Math.max(0, outerScroll.scrollTop - split.expansionDistance);
+        remainingDelta = split.remainingDelta;
+        matrixStart = Math.min(matrixMaximum, Math.max(0, matrixScroll.scrollTop));
+      }
+    }
+
     const matrixTarget = Math.min(matrixMaximum, Math.max(0, matrixStart + remainingDelta));
     matrixScroll.scrollTop = matrixTarget;
 
@@ -322,12 +372,14 @@ export function createDigitalChessboardFeature(root, options = {}) {
     if (motion.direction > 0) {
       motion.matrixTarget = Math.max(motion.matrixTarget, motion.matrixScroll.scrollTop);
       motion.outerLeadTarget = Math.max(motion.outerLeadTarget, motion.outerScroll.scrollTop);
+      motion.outerCoupledTarget = Math.max(motion.outerCoupledTarget, motion.outerScroll.scrollTop);
       motion.outerTarget = Math.max(motion.outerTarget, motion.outerScroll.scrollTop);
       return;
     }
     if (motion.direction < 0) {
       motion.matrixTarget = Math.min(motion.matrixTarget, motion.matrixScroll.scrollTop);
       motion.outerLeadTarget = Math.min(motion.outerLeadTarget, motion.outerScroll.scrollTop);
+      motion.outerCoupledTarget = Math.min(motion.outerCoupledTarget, motion.outerScroll.scrollTop);
       motion.outerTarget = Math.min(motion.outerTarget, motion.outerScroll.scrollTop);
     }
   }
@@ -367,12 +419,22 @@ export function createDigitalChessboardFeature(root, options = {}) {
         motion.matrixTarget,
         factor,
       );
+      motion.outerScroll.scrollTop = moveScrollPosition(
+        motion.outerScroll.scrollTop,
+        motion.outerCoupledTarget,
+        factor,
+      );
     }
     const matrixSettled = Math.abs(motion.matrixTarget - motion.matrixScroll.scrollTop)
       <= WHEEL_SCROLL_SETTLE_DISTANCE;
     if (outerLeadSettled && matrixSettled) motion.matrixScroll.scrollTop = motion.matrixTarget;
+    const outerCoupledSettled = Math.abs(motion.outerCoupledTarget - motion.outerScroll.scrollTop)
+      <= WHEEL_SCROLL_SETTLE_DISTANCE;
+    if (outerLeadSettled && outerCoupledSettled) {
+      motion.outerScroll.scrollTop = motion.outerCoupledTarget;
+    }
 
-    if (outerLeadSettled && matrixSettled) {
+    if (outerLeadSettled && matrixSettled && outerCoupledSettled) {
       motion.outerScroll.scrollTop = moveScrollPosition(
         motion.outerScroll.scrollTop,
         motion.outerTarget,
@@ -381,7 +443,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     }
     const outerSettled = Math.abs(motion.outerTarget - motion.outerScroll.scrollTop)
       <= WHEEL_SCROLL_SETTLE_DISTANCE;
-    if (outerLeadSettled && matrixSettled && outerSettled) {
+    if (outerLeadSettled && matrixSettled && outerCoupledSettled && outerSettled) {
       motion.outerScroll.scrollTop = motion.outerTarget;
     }
 
@@ -389,7 +451,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
       flushWorkStickyLayers();
     }
 
-    if (outerLeadSettled && matrixSettled && outerSettled) {
+    if (outerLeadSettled && matrixSettled && outerCoupledSettled && outerSettled) {
       smoothWheelMotion = null;
       return;
     }
@@ -408,6 +470,9 @@ export function createDigitalChessboardFeature(root, options = {}) {
       && (smoothWheelMotion.matrixScroll !== matrixScroll || smoothWheelMotion.outerScroll !== outerScroll);
     if (!smoothWheelMotion || changesOwner) {
       cancelSmoothWheelMotion();
+      const alignmentDistance = direction < 0
+        ? upwardWorkAlignmentDistance(matrixScroll, outerScroll)
+        : 0;
       smoothWheelMotion = {
         direction,
         frame: null,
@@ -417,21 +482,28 @@ export function createDigitalChessboardFeature(root, options = {}) {
         outerScroll,
         outerLeadComplete: false,
         outerLeadTarget: outerScroll.scrollTop,
+        outerCoupledTarget: outerScroll.scrollTop,
         outerTarget: outerScroll.scrollTop,
-        upwardAlignmentRemaining: direction < 0
-          ? upwardWorkAlignmentDistance(matrixScroll, outerScroll)
-          : 0,
+        upwardAlignmentRemaining: alignmentDistance,
+        upwardExpansionTarget: direction < 0
+          ? upwardExpansionTarget(matrixScroll, outerScroll, alignmentDistance)
+          : outerScroll.scrollTop,
       };
     } else if (smoothWheelMotion.direction !== direction) {
+      const alignmentDistance = direction < 0
+        ? upwardWorkAlignmentDistance(matrixScroll, outerScroll)
+        : 0;
       smoothWheelMotion.direction = direction;
       smoothWheelMotion.lastTimestamp = null;
       smoothWheelMotion.matrixTarget = matrixScroll.scrollTop;
       smoothWheelMotion.outerLeadComplete = false;
       smoothWheelMotion.outerLeadTarget = outerScroll.scrollTop;
+      smoothWheelMotion.outerCoupledTarget = outerScroll.scrollTop;
       smoothWheelMotion.outerTarget = outerScroll.scrollTop;
-      smoothWheelMotion.upwardAlignmentRemaining = direction < 0
-        ? upwardWorkAlignmentDistance(matrixScroll, outerScroll)
-          : 0;
+      smoothWheelMotion.upwardAlignmentRemaining = alignmentDistance;
+      smoothWheelMotion.upwardExpansionTarget = direction < 0
+        ? upwardExpansionTarget(matrixScroll, outerScroll, alignmentDistance)
+        : outerScroll.scrollTop;
     }
 
     reconcileSmoothTargetsWithActualPositions(smoothWheelMotion);
@@ -444,6 +516,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
         smoothWheelMotion.outerLeadTarget,
       );
       smoothWheelMotion.outerLeadTarget -= alignmentStep;
+      smoothWheelMotion.outerCoupledTarget -= alignmentStep;
       smoothWheelMotion.outerLeadComplete = false;
       smoothWheelMotion.outerTarget -= alignmentStep;
       smoothWheelMotion.upwardAlignmentRemaining -= alignmentStep;
@@ -455,6 +528,27 @@ export function createDigitalChessboardFeature(root, options = {}) {
     }
 
     const matrixMaximum = Math.max(0, matrixScroll.scrollHeight - matrixScroll.clientHeight);
+    if (remainingDelta < 0 && smoothWheelMotion.matrixTarget > 0) {
+      const matrixCapacity = smoothWheelMotion.matrixTarget;
+      const expansionCapacity = Math.max(
+        0,
+        smoothWheelMotion.outerCoupledTarget - smoothWheelMotion.upwardExpansionTarget,
+      );
+      const split = splitCoupledUpwardDelta(remainingDelta, matrixCapacity, expansionCapacity);
+      if (split.coupledDistance > 0) {
+        smoothWheelMotion.matrixTarget = Math.max(0, matrixCapacity - split.matrixDistance);
+        smoothWheelMotion.outerCoupledTarget = Math.max(
+          smoothWheelMotion.upwardExpansionTarget,
+          smoothWheelMotion.outerCoupledTarget - split.expansionDistance,
+        );
+        smoothWheelMotion.outerTarget = Math.min(
+          smoothWheelMotion.outerTarget,
+          smoothWheelMotion.outerCoupledTarget,
+        );
+        remainingDelta = split.remainingDelta;
+      }
+    }
+
     const matrixStart = Math.min(matrixMaximum, Math.max(0, smoothWheelMotion.matrixTarget));
     const matrixTarget = Math.min(matrixMaximum, Math.max(0, matrixStart + remainingDelta));
     smoothWheelMotion.matrixTarget = matrixTarget;
@@ -1292,14 +1386,15 @@ export function createDigitalChessboardFeature(root, options = {}) {
     const description = el('span', 'dch2-work-description');
     let readinessValue;
     [
-      ['Готовность', `${readiness}%`],
-      ['Плановый срок', `${work.plannedStart}–${work.plannedEnd}`],
-      ['Подрядчик', work.contractor],
+      ['Готовность', `${readiness}%`, 'dch2-work-description__item--readiness'],
+      ['Плановый срок', `${work.plannedStart}–${work.plannedEnd}`, 'dch2-work-description__item--period'],
+      ['Подрядчик', work.contractor, 'dch2-work-description__item--contractor'],
       ['Группа работ', groupName, 'dch2-work-description__item--fullscreen'],
     ].forEach(([label, value, className = '']) => {
       const item = el('span', `dch2-work-description__item ${className}`.trim());
       const valueElement = el('span', 'dch2-work-description__value', value);
       if (label === 'Готовность') valueElement.classList.toggle('is-complete', readiness === 100);
+      if (label === 'Подрядчик') valueElement.title = value;
       item.append(el('span', 'dch2-work-description__label', `${label}:`), valueElement);
       description.append(item);
       if (label === 'Готовность') readinessValue = valueElement;
@@ -1513,6 +1608,9 @@ export function createDigitalChessboardFeature(root, options = {}) {
     workStickyScrollHost?.classList.add('is-dch2-work-fullscreen-restoring');
     document.removeEventListener('keydown', handleWorkFullscreenKeydown, true);
     fullscreenSession = null;
+    if (!restoreFocus && reference?.element.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
     if (workStickyScrollHost) {
       workStickyScrollHost.scrollTop = session.outerScrollTop;
       if (restoreFocus && session.returnFocus?.isConnected) session.returnFocus.focus({ preventScroll: true });
@@ -1620,7 +1718,9 @@ export function createDigitalChessboardFeature(root, options = {}) {
       onClick: event => {
         event.stopPropagation();
         if (fullscreenSession?.closing || fullscreenSession?.switching) return;
-        if (fullscreenSession?.workId === work.id) exitWorkFullscreen();
+        if (fullscreenSession?.workId === work.id) {
+          exitWorkFullscreen({ restoreFocus: event.detail === 0 });
+        }
         else if (!fullscreenSession) enterWorkFullscreen(work.id);
       },
     });
