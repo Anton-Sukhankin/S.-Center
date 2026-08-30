@@ -36,6 +36,7 @@
         queueId: 'queue-1',
         partCount: 15
     });
+    const SECTION_HEIGHT_TIERS = Object.freeze([0, 1, 2, 1, 0, 1, 2, 3, 2, 1, 0, 1, 2, 1, 0]);
 
     const OBJECT_TEMPLATES = window.constructionObjectsData.getAll().map((identity) => ({
         ...identity,
@@ -156,6 +157,23 @@
         };
     }
 
+    function createSectionGeometry(context, object) {
+        const partCount = Math.max(0, Math.floor(Number(object.partCount) || 0));
+        const floorCount = Math.max(1, Math.floor(Number(object.floorCount) || 1));
+        const selectionId = context?.treeNodeId || `${resolveProjectId(context)}:${object.id}`;
+        const anchor = partCount ? hash(`${selectionId}:${object.id}:section-height-anchor`) % partCount : 0;
+        const tierStep = floorCount >= 36 ? 4 : floorCount >= 24 ? 3 : floorCount >= 12 ? 2 : 1;
+        return Array.from({ length: partCount }, (_, index) => {
+            const distanceFromAnchor = (index - anchor + partCount) % partCount;
+            const tier = SECTION_HEIGHT_TIERS[distanceFromAnchor % SECTION_HEIGHT_TIERS.length];
+            return {
+                id: `part-${index + 1}`,
+                name: `${object.partLabel} ${index + 1}`,
+                floorCount: Math.max(1, floorCount - tier * tierStep)
+            };
+        });
+    }
+
     function resolveStatus(actual, plan, applicable) {
         if (!applicable) return STATUS.NOT_APPLICABLE;
         if (actual === null || actual === undefined) return STATUS.NO_DATA;
@@ -199,13 +217,6 @@
         const nominalFront = 2.4 + floorCount * (completion / 100);
         const activityFront = Math.max(0.8, Math.min(floorCount + 2.5, nominalFront + sectionOffset + sectionWave));
         const distanceToFront = activityFront - sequenceFloor;
-        const notApplicableRate = floorCount <= 5 ? 0.025 : 0.014;
-        const applicabilityRoll = randomUnit(workSeed, 5000 + cellSalt);
-
-        if (applicabilityRoll < notApplicableRate) {
-            return { actual: null, plan: null, applicable: false, status: STATUS.NOT_APPLICABLE };
-        }
-
         if (distanceToFront < -0.65) {
             return { actual: null, plan: null, applicable: true, status: STATUS.NO_DATA };
         }
@@ -251,10 +262,30 @@
     }
 
     function formatPlannedDate(index, isEnd) {
-        const month = String(((index * 2 + (isEnd ? 5 : 1)) % 12) + 1).padStart(2, '0');
+        const monthNumber = ((index * 2 + (isEnd ? 5 : 1)) % 12) + 1;
+        const month = String(monthNumber).padStart(2, '0');
         const year = 2024 + Math.floor((index + (isEnd ? 8 : 0)) / 12);
-        const day = isEnd ? '30' : String((index % 18) + 1).padStart(2, '0');
+        const dayNumber = isEnd
+            ? new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+            : (index % 18) + 1;
+        const day = String(dayNumber).padStart(2, '0');
         return `${day}.${month}.${year}`;
+    }
+
+    function parseDisplayDate(value) {
+        const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(value));
+        if (!match) return null;
+        const [, dayValue, monthValue, yearValue] = match;
+        const day = Number(dayValue);
+        const month = Number(monthValue);
+        const year = Number(yearValue);
+        const timestamp = Date.UTC(year, month - 1, day);
+        const parsed = new Date(timestamp);
+        return parsed.getUTCFullYear() === year
+            && parsed.getUTCMonth() === month - 1
+            && parsed.getUTCDate() === day
+            ? timestamp
+            : null;
     }
 
     function createWork(tuple, object, periodIndex, projectSeed, objectIndex, workIndex) {
@@ -264,12 +295,14 @@
             ? 100
             : clamp(baseCompletion + objectIndex * 3 - periodIndex * 6 + (projectSeed % 5) - 2);
         const floors = Array.from({ length: object.floorCount }, (_, index) => index + 1);
-        const sections = Array.from({ length: object.partCount }, (_, index) => ({ id: `part-${index + 1}`, name: `${object.partLabel} ${index + 1}` }));
+        const sections = object.sections.map((section) => ({ ...section }));
         const cells = {};
         const workSeed = hash(`${projectSeed}:${object.id}:${id}`);
         floors.forEach((floor) => {
             sections.forEach((section, partIndex) => {
-                const cell = createCell(workSeed, floor, partIndex, completion, object.floorCount);
+                const cell = floor > section.floorCount
+                    ? { actual: null, plan: null, applicable: false, status: STATUS.NOT_APPLICABLE }
+                    : createCell(workSeed, floor, partIndex, completion, object.floorCount);
                 cells[`${floor}:${section.id}`] = isComplete && cell.applicable
                     ? withLastChange(
                         { actual: 100, plan: 100, applicable: true, status: STATUS.COMPLETED },
@@ -315,10 +348,14 @@
             status: 'ready',
             projectId,
             objects: OBJECT_TEMPLATES.map((template, objectIndex) => {
-                const object = {
+                const objectWithoutSections = {
                     ...template,
                     ...createWorkProfile(context, template),
                     projectId
+                };
+                const object = {
+                    ...objectWithoutSections,
+                    sections: createSectionGeometry(context, objectWithoutSections)
                 };
                 return {
                     ...object,
@@ -362,6 +399,18 @@
             if (object.completeWorkCount < 3 || object.completeWorkCount > 7) {
                 errors.push(`${object.id}: количество завершённых работ должно находиться в диапазоне 3–7.`);
             }
+            if (!Array.isArray(object.sections) || object.sections.length !== object.partCount) {
+                errors.push(`${object.id}: геометрия секций не соответствует количеству частей объекта.`);
+            } else {
+                object.sections.forEach((section) => {
+                    if (!Number.isInteger(section.floorCount) || section.floorCount < 1 || section.floorCount > object.floorCount) {
+                        errors.push(`${object.id}/${section.id}: этажность секции должна быть целым числом от 1 до ${object.floorCount}.`);
+                    }
+                });
+                if (Math.max(...object.sections.map(section => section.floorCount)) !== object.floorCount) {
+                    errors.push(`${object.id}: максимальная этажность секций должна совпадать с этажностью объекта.`);
+                }
+            }
             object.periods.forEach((period) => {
                 if (period.works.length !== 27) errors.push(`${object.id}/${period.id}: ожидалось 27 работ.`);
                 const completeWorkCount = period.works.filter(work => work.completion === 100).length;
@@ -391,6 +440,18 @@
                 }
                 const periodStatuses = new Set();
                 period.works.forEach((work) => {
+                    const plannedStart = parseDisplayDate(work.plannedStart);
+                    const plannedEnd = parseDisplayDate(work.plannedEnd);
+                    if (plannedStart === null || plannedEnd === null) {
+                        errors.push(`${object.id}/${period.id}/${work.id}: плановый срок содержит календарно недопустимую дату.`);
+                    } else if (plannedStart > plannedEnd) {
+                        errors.push(`${object.id}/${period.id}/${work.id}: начало планового срока следует после окончания.`);
+                    }
+                    const workGeometry = work.sections.map(section => `${section.id}:${section.floorCount}`).join('|');
+                    const objectGeometry = object.sections.map(section => `${section.id}:${section.floorCount}`).join('|');
+                    if (workGeometry !== objectGeometry) {
+                        errors.push(`${object.id}/${period.id}/${work.id}: геометрия секций отличается от геометрии объекта.`);
+                    }
                     Object.values(work.cells).forEach((cell) => {
                         periodStatuses.add(cell.status);
                         if ([STATUS.IN_PROGRESS, STATUS.COMPLETED, STATUS.DELAYED].includes(cell.status)) {

@@ -11,6 +11,36 @@
   min-height: 320px;
 }
 
+.component-chessboard-story--narrow {
+  width: min(460px, calc(100vw - 64px));
+}
+
+.component-chessboard-story--context-menu {
+  position: relative;
+  min-height: 440px;
+}
+
+.component-chessboard-story__cell-menu.ds-menu.ds-menu--component {
+  position: absolute;
+  z-index: 2100;
+  display: block;
+  pointer-events: none;
+}
+
+.component-chessboard-story__menu-anchor {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.component-chessboard-story__cell-menu.ds-menu--component .ds-menu__popover {
+  min-width: 250px;
+  pointer-events: auto;
+}
+
 .component-chessboard-story > .ds-button {
   margin-bottom: 12px;
 }

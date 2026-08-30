@@ -3,10 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "description": "Native HTML, CSS and JavaScript prototype of the S-Center digital chessboard shell.",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "open": "node scripts/open.mjs",
-    "check": "node scripts/check.mjs"
+    "dev": "vite --host 127.0.0.1 --port 4173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "check": "node scripts/check.mjs",
+    "test:scroll-contract": "playwright test --config=playwright.config.mjs tests/scroll-contract.spec.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.2",
+    "@openai/sites-vite-plugin": "^0.2.0",
+    "@playwright/test": "^1.62.1",
+    "vite": "^8.2.2"
   }
 }

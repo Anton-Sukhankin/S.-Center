@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "status": "current-prototype-reference-nonnormative",
+  "verifiedOn": "2026-08-29",
+  "prototypeSourceFiles": [
+    "../../../src/integrations/digital-chessboard/feature/digital-chessboard.js",
+    "../../../src/integrations/digital-chessboard/feature/digital-chessboard.css"
+  ],
+  "constants": {
+    "wheelLinePixels": 16,
+    "smoothTimeConstantMs": 65,
+    "settleDistancePx": 4,
+    "maxFrameElapsedMs": 48,
+    "initialFrameElapsedMs": 16,
+    "gestureIdleMs": 180,
+    "negligibleDistancePx": 0.01,
+    "bottomTolerancePx": 1,
+    "minimumVisibleFloorRows": 8,
+    "maximumVisibleFloorRows": 15,
+    "prototypeFloorRowHeightPx": 45,
+    "prototypeMatrixHeaderHeightPx": 34,
+    "prototypeVisibleFloorRowsHeightPx": 675,
+    "prototypeWorkListGapPx": 8
+  },
+  "vectors": [
+    {
+      "id": "KV-NORMALIZE-PIXEL",
+      "operation": "normalizeWheelDelta",
+      "input": { "deltaY": 120, "deltaMode": 0, "pageHeightPx": 820 },
+      "expected": { "deltaPx": 120 }
+    },
+    {
+      "id": "KV-NORMALIZE-LINE",
+      "operation": "normalizeWheelDelta",
+      "input": { "deltaY": 3, "deltaMode": 1, "pageHeightPx": 820 },
+      "expected": { "deltaPx": 48 }
+    },
+    {
+      "id": "KV-NORMALIZE-PAGE",
+      "operation": "normalizeWheelDelta",
+      "input": { "deltaY": 0.5, "deltaMode": 2, "pageHeightPx": 820 },
+      "expected": { "deltaPx": 410 }
+    },
+    {
+      "id": "KV-ROUTE-INNER-FIRST",
+      "operation": "routeBasicDelta",
+      "input": {
+        "innerStartPx": 100,
+        "innerMaximumPx": 1000,
+        "outerStartPx": 200,
+        "outerMaximumPx": 2000,
+        "deltaPx": 180
+      },
+      "expected": { "innerTargetPx": 280, "outerTargetPx": 200, "unappliedDeltaPx": 0 }
+    },
+    {
+      "id": "KV-ROUTE-DOWN-BOUNDARY",
+      "operation": "routeBasicDelta",
+      "input": {
+        "innerStartPx": 980,
+        "innerMaximumPx": 1000,
+        "outerStartPx": 200,
+        "outerMaximumPx": 2000,
+        "deltaPx": 120
+      },
+      "expected": { "innerTargetPx": 1000, "outerTargetPx": 300, "unappliedDeltaPx": 0 }
+    },
+    {
+      "id": "KV-ROUTE-UP-BOUNDARY",
+      "operation": "routeBasicDelta",
+      "input": {
+        "innerStartPx": 30,
+        "innerMaximumPx": 1000,
+        "outerStartPx": 200,
+        "outerMaximumPx": 2000,
+        "deltaPx": -120
+      },
+      "expected": { "innerTargetPx": 0, "outerTargetPx": 110, "unappliedDeltaPx": 0 }
+    },
+    {
+      "id": "KV-ROUTE-OUTER-CLAMP",
+      "operation": "routeBasicDelta",
+      "input": {
+        "innerStartPx": 1000,
+        "innerMaximumPx": 1000,
+        "outerStartPx": 1950,
+        "outerMaximumPx": 2000,
+        "deltaPx": 120
+      },
+      "expected": { "innerTargetPx": 1000, "outerTargetPx": 2000, "unappliedDeltaPx": 70 }
+    },
+    {
+      "id": "KV-COUPLED-PROPORTIONAL",
+      "operation": "splitCoupledUpwardDelta",
+      "input": { "deltaPx": -180, "matrixCapacityPx": 900, "expansionCapacityPx": 300 },
+      "expected": {
+        "coupledDistancePx": 180,
+        "matrixDistancePx": 135,
+        "expansionDistancePx": 45,
+        "remainingDeltaPx": 0
+      }
+    },
+    {
+      "id": "KV-COUPLED-CAPACITY-LIMIT",
+      "operation": "splitCoupledUpwardDelta",
+      "input": { "deltaPx": -500, "matrixCapacityPx": 100, "expansionCapacityPx": 50 },
+      "expected": {
+        "coupledDistancePx": 150,
+        "matrixDistancePx": 100,
+        "expansionDistancePx": 50,
+        "remainingDeltaPx": -350
+      }
+    },
+    {
+      "id": "KV-COUPLED-NOT-APPLICABLE",
+      "operation": "splitCoupledUpwardDelta",
+      "input": { "deltaPx": 120, "matrixCapacityPx": 400, "expansionCapacityPx": 200 },
+      "expected": {
+        "coupledDistancePx": 0,
+        "matrixDistancePx": 0,
+        "expansionDistancePx": 0,
+        "remainingDeltaPx": 120
+      }
+    },
+    {
+      "id": "KV-FRAME-FIRST",
+      "operation": "frameFactor",
+      "input": { "elapsedMs": 16 },
+      "expected": { "factor": 0.2181980615483914 },
+      "tolerance": 1e-12
+    },
+    {
+      "id": "KV-FRAME-CLAMP",
+      "operation": "frameFactor",
+      "input": { "elapsedMs": 100 },
+      "expected": { "factor": 0.5221514981489528 },
+      "tolerance": 1e-12
+    },
+    {
+      "id": "KV-MOVE-SMOOTH",
+      "operation": "moveScrollPosition",
+      "input": { "currentPx": 100, "targetPx": 200, "elapsedMs": 16 },
+      "expected": { "nextPx": 121.81980615483914 },
+      "tolerance": 1e-10
+    },
+    {
+      "id": "KV-MOVE-SETTLE",
+      "operation": "moveScrollPosition",
+      "input": { "currentPx": 100, "targetPx": 103, "elapsedMs": 16 },
+      "expected": { "nextPx": 103 }
+    },
+    {
+      "id": "KV-STICKY-FIFTEEN-ROWS",
+      "operation": "maxStickyShift",
+      "input": { "matrixViewportHeightPx": 709, "matrixHeaderHeightPx": 34, "floorRowHeightPx": 45 },
+      "expected": { "maxStickyShiftPx": 315 }
+    },
+    {
+      "id": "KV-STICKY-EIGHT-ROWS",
+      "operation": "maxStickyShift",
+      "input": { "matrixViewportHeightPx": 394, "matrixHeaderHeightPx": 34, "floorRowHeightPx": 45 },
+      "expected": { "maxStickyShiftPx": 0 }
+    },
+    {
+      "id": "KV-OWNER-AT-TIMEOUT",
+      "operation": "gestureOwnerExpired",
+      "input": { "lastTimestampMs": 1000, "currentTimestampMs": 1180, "ownerConnected": true },
+      "expected": { "expired": false }
+    },
+    {
+      "id": "KV-OWNER-AFTER-TIMEOUT",
+      "operation": "gestureOwnerExpired",
+      "input": { "lastTimestampMs": 1000, "currentTimestampMs": 1180.01, "ownerConnected": true },
+      "expected": { "expired": true }
+    },
+    {
+      "id": "KV-OWNER-TIMESTAMP-RESET",
+      "operation": "gestureOwnerExpired",
+      "input": { "lastTimestampMs": 1000, "currentTimestampMs": 999, "ownerConnected": true },
+      "expected": { "expired": true }
+    },
+    {
+      "id": "KV-RESTORE-INITIAL",
+      "operation": "restoreScrollPosition",
+      "input": { "maximumPx": 1200, "stored": null },
+      "expected": { "scrollTopPx": 1200 }
+    },
+    {
+      "id": "KV-RESTORE-AT-BOTTOM",
+      "operation": "restoreScrollPosition",
+      "input": { "maximumPx": 1200, "stored": { "scrollTopPx": 900, "atBottom": true } },
+      "expected": { "scrollTopPx": 1200 }
+    },
+    {
+      "id": "KV-RESTORE-MIDDLE",
+      "operation": "restoreScrollPosition",
+      "input": { "maximumPx": 1200, "stored": { "scrollTopPx": 400, "atBottom": false } },
+      "expected": { "scrollTopPx": 400 }
+    },
+    {
+      "id": "KV-RESTORE-CLAMP",
+      "operation": "restoreScrollPosition",
+      "input": { "maximumPx": 1200, "stored": { "scrollTopPx": 1500, "atBottom": false } },
+      "expected": { "scrollTopPx": 1200 }
+    }
+  ]
+}

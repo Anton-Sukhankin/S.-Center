@@ -15,7 +15,11 @@ S.Center/
 ├── package.json
 ├── docs/
 │   ├── README.md
-│   └── workspace-architecture.md
+│   ├── workspace-architecture.md
+│   └── context-governance/
+│       ├── README.md
+│       ├── area-registry.json
+│       └── context-segment-template.md
 ├── scripts/
 │   └── check-workspace.mjs
 ├── s-center-prototype/
@@ -24,6 +28,8 @@ S.Center/
 ```
 
 Корневые файлы управляют маршрутизацией и проверкой. Продуктовые требования и детали реализации остаются внутри каталога-владельца.
+
+Повторяемый выбор минимального контекста регулируется [context-governance](./context-governance/README.md). Его реестр связывает существующие пути с локальными индексами, но не переносит продуктовые спецификации в корень.
 
 ## 2. Каталоги и ответственность
 
@@ -108,6 +114,8 @@ archive/    исторические артефакты, только если �
 
 Пустые каталоги и документы «на будущее» не создаются.
 
+Документационный контекст масштабируется независимо от физической группировки исходников: новая самостоятельная функция получает локальный индекс и запись в [реестре областей](./context-governance/area-registry.json), а общий факт нескольких функций переносится к ближайшему общему владельцу. При нескольких совпадениях маршрута используется наиболее длинный `scopePath`, поэтому дочерняя область не заставляет агента читать весь контекст приложения. Подробные условия создания области и межфункционального контракта находятся в [регламенте](./context-governance/README.md#8-когда-создавать-новую-область).
+
 ## 6. Спецификации интерфейса
 
 Полный контекст цифровой шахматки маршрутизируется через [локальный индекс](../s-center-prototype/docs/digital-chessboard/README.md):
@@ -115,6 +123,9 @@ archive/    исторические артефакты, только если �
 - [implementation-plan.md](../s-center-prototype/docs/digital-chessboard/implementation-plan.md) — необходимые корректировки, принятые решения, области интерфейса, нумерация и прогресс;
 - [functional-context.md](../s-center-prototype/docs/digital-chessboard/functional-context.md) — долговременная целевая функциональная спецификация;
 - [technical-baseline.md](../s-center-prototype/docs/digital-chessboard/technical-baseline.md) — подтверждённая текущая реализация и границы интеграции;
+- [domain-model.md](../s-center-prototype/docs/digital-chessboard/domain-model.md) — сущности, состояния, отношения и границы демонстрационных данных;
+- [interface-map.md](../s-center-prototype/docs/digital-chessboard/interface-map.md) — роли и связи областей интерфейса;
+- [traceability-matrix.md](../s-center-prototype/docs/digital-chessboard/traceability-matrix.md) — связь идентификаторов требований, областей, кода и приёмки;
 - [реестр качества](../s-center-prototype/docs/quality/README.md) — компонентные и визуальные проверки, которые не создают продуктовых требований.
 
 Новая самостоятельная спецификация создаётся только при появлении собственного контракта и владельца, например серверного сохранения факта или отдельного режима планирования. До этого правило остаётся в ближайшем существующем владельце.

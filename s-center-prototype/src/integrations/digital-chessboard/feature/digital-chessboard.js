@@ -16,7 +16,7 @@ import {
   createTabs,
   createTooltip,
 } from '../../../../../component-library-transfer/src/index.js';
-import { GROUP_DEFINITIONS } from '../data/digital-chessboard-groups.js';
+import { createGroupWorks, GROUP_DEFINITIONS } from '../data/digital-chessboard-groups.js';
 
 const integrationName = 'Digital Chessboard';
 const MIN_SECTION_COUNT = 4;
@@ -24,10 +24,15 @@ const MAX_SECTION_COUNT = 15;
 const MATRIX_ROW_HEADER_WIDTH = 92;
 const MATRIX_COLUMN_WIDTH = 72;
 const MATRIX_STICKY_MIN_VISIBLE_FLOOR_COUNT = 8;
+const MATRIX_SCROLL_BOTTOM_TOLERANCE = 1;
+const WHEEL_DELTA_LINE_HEIGHT = 16;
 const WHEEL_SCROLL_TIME_CONSTANT_MS = 65;
 const WHEEL_SCROLL_SETTLE_DISTANCE = 4;
 const WHEEL_SCROLL_MAX_FRAME_MS = 48;
+const WHEEL_SCROLL_INITIAL_FRAME_MS = 16;
+const WHEEL_SCROLL_EPSILON = 0.01;
 const WHEEL_GESTURE_IDLE_MS = 180;
+const SCROLL_DEBUG_VERSION = 'wheel-router-v6';
 const CELL_HISTORY_TOOLTIP_DELAY_MS = 1000;
 const WORK_FULLSCREEN_TRANSITION_MS = 220;
 const DEMO_CURRENT_USER = Object.freeze({ displayName: 'Соколова Мария Андреевна', login: 'm.sokolova' });
@@ -146,6 +151,16 @@ export function createDigitalChessboardFeature(root, options = {}) {
   let destroyed = false;
   let workStickyScrollHost = null;
   let workStickyFrame = null;
+  let workStickyResizeObserver = null;
+  let wheelCaptureBound = false;
+  let scrollDebugPanel = null;
+  let scrollDebugMatrix = null;
+  let scrollDebugFrame = null;
+  let scrollDebugPendingStage = 'ready';
+  let scrollDebugEventCount = 0;
+  let scrollDebugLastEvent = null;
+  let scrollDebugDecision = 'none';
+  const scrollDebugDecisionCounts = new Map();
   let smoothWheelMotion = null;
   let wheelGestureOwner = null;
   let fullscreenSession = null;
@@ -231,43 +246,230 @@ export function createDigitalChessboardFeature(root, options = {}) {
     syncWorkStickyLayers();
   }
 
-  function wheelDeltaInPixels(event, pageHeight) {
-    if (event.deltaMode === 1) return event.deltaY * 16;
-    if (event.deltaMode === 2) return event.deltaY * pageHeight;
-    return event.deltaY;
+  function refreshWorkStickyGeometryObservers() {
+    if (!workStickyResizeObserver) return;
+
+    workStickyResizeObserver.disconnect();
+    const geometryOwners = [
+      workStickyScrollHost,
+      workStickyScrollHost?.querySelector('.s-center-main__header'),
+      root.querySelector('.dch2-tabs > .ds-tabs__list'),
+      root.querySelector('.dch2-work-list'),
+      ...root.querySelectorAll([
+        '.dch2-work-accordion',
+        '.dch2-work-accordion .ds-chessboard__scroll',
+        '.dch2-work-accordion .ds-chessboard__table thead',
+        '.dch2-work-accordion .ds-chessboard__table tbody tr:first-child',
+      ].join(', ')),
+    ];
+
+    new Set(geometryOwners.filter(Boolean)).forEach(element => workStickyResizeObserver.observe(element));
   }
 
-  function matrixScrollFromWheelPath(event) {
+  function wheelComponentInPixels(value, deltaMode, pageSize) {
+    if (deltaMode === 1) return value * WHEEL_DELTA_LINE_HEIGHT;
+    if (deltaMode === 2) return value * pageSize;
+    return value;
+  }
+
+  function wheelDeltaInPixels(event, pageHeight) {
+    return wheelComponentInPixels(event.deltaY, event.deltaMode, pageHeight);
+  }
+
+  function wheelHorizontalDeltaInPixels(event, pageWidth) {
+    return wheelComponentInPixels(event.deltaX, event.deltaMode, pageWidth);
+  }
+
+  function matrixScrollFromWheelEvent(event) {
     const pathMatch = event.composedPath().find(node => (
       node instanceof Element
       && node.classList.contains('ds-chessboard__scroll')
       && node.closest('.dch2-matrix')
     ));
     if (pathMatch && root.contains(pathMatch)) return pathMatch;
+
+    if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+      const pointTarget = document.elementFromPoint(event.clientX, event.clientY);
+      const pointMatrix = pointTarget?.closest?.('.ds-chessboard__scroll');
+      if (pointMatrix?.closest('.dch2-matrix') && root.contains(pointMatrix)) return pointMatrix;
+    }
     return null;
+  }
+
+  function scrollDebugEnabled() {
+    return new URLSearchParams(window.location.search).get('scroll-debug') === '1';
+  }
+
+  function scrollDebugTargetLabel(target) {
+    if (!(target instanceof Element)) return String(target?.nodeName || 'unknown');
+    const className = typeof target.className === 'string'
+      ? target.className.trim().split(/\s+/).slice(0, 3).join('.')
+      : '';
+    return `${target.tagName.toLowerCase()}${className ? `.${className}` : ''}`;
+  }
+
+  function renderScrollDebug(stage = 'ready') {
+    if (!scrollDebugPanel) return;
+    const matrixScroll = scrollDebugMatrix?.isConnected
+      ? scrollDebugMatrix
+      : root.querySelector('.dch2-work-accordion.is-expanded .ds-chessboard__scroll');
+    const outerScroll = workStickyScrollHost || root.closest('.s-center-main');
+    const matrixMaximum = matrixScroll
+      ? Math.max(0, matrixScroll.scrollHeight - matrixScroll.clientHeight)
+      : 0;
+    const outerMaximum = outerScroll
+      ? Math.max(0, outerScroll.scrollHeight - outerScroll.clientHeight)
+      : 0;
+    const documentScroll = document.scrollingElement;
+    const documentMaximum = documentScroll
+      ? Math.max(0, documentScroll.scrollHeight - documentScroll.clientHeight)
+      : 0;
+    const overscrollY = matrixScroll
+      ? window.getComputedStyle(matrixScroll).overscrollBehaviorY
+      : 'n/a';
+    const event = scrollDebugLastEvent;
+    scrollDebugPanel.textContent = [
+      `S.Center scroll debug · ${SCROLL_DEBUG_VERSION}`,
+      `stage=${stage} · wheel events=${scrollDebugEventCount}`,
+      event
+        ? `trusted=${event.trusted} · target=${event.target} · matrixPath=${event.matrixPath}`
+        : 'trusted=n/a · target=n/a · matrixPath=n/a',
+      event
+        ? `deltaY=${event.deltaY} · deltaX=${event.deltaX} · mode=${event.deltaMode} · hasVertical=${event.hasVertical}`
+        : 'deltaY=n/a · deltaX=n/a · mode=n/a · hasVertical=n/a',
+      event
+        ? `cancelable=${event.cancelable} · prevented=${event.prevented} · bubbled=${event.bubbled}`
+        : 'cancelable=n/a · prevented=n/a · bubbled=n/a',
+      event
+        ? `shift=${event.shiftKey} · ctrl=${event.ctrlKey}`
+        : 'shift=n/a · ctrl=n/a',
+      `decision=${scrollDebugDecision} · counts=${[...scrollDebugDecisionCounts.entries()].map(([key, value]) => `${key}:${value}`).join(',') || 'none'}`,
+      `inner=${matrixScroll ? matrixScroll.scrollTop.toFixed(1) : 'n/a'} / ${matrixMaximum.toFixed(1)}`,
+      `outer=${outerScroll ? outerScroll.scrollTop.toFixed(1) : 'n/a'} / ${outerMaximum.toFixed(1)} · captureBound=${wheelCaptureBound}`,
+      `document=${documentScroll ? documentScroll.scrollTop.toFixed(1) : 'n/a'} / ${documentMaximum.toFixed(1)}`,
+      `viewport=${window.innerWidth} · visual=${window.visualViewport?.width?.toFixed(1) || 'n/a'} · media760=${window.matchMedia('(max-width: 760px)').matches}`,
+      `overscroll-y=${overscrollY} · fullscreen=${Boolean(fullscreenSession)}`,
+      'Сделайте скролл через границу и пришлите скриншот этого блока.',
+    ].join('\n');
+  }
+
+  function recordScrollDebugDecision(decision) {
+    if (!scrollDebugPanel) return;
+    scrollDebugDecision = decision;
+    scrollDebugDecisionCounts.set(decision, (scrollDebugDecisionCounts.get(decision) || 0) + 1);
+    scheduleScrollDebug('after-route-frame');
+  }
+
+  function scheduleScrollDebug(stage) {
+    if (!scrollDebugPanel) return;
+    scrollDebugPendingStage = stage;
+    if (scrollDebugFrame !== null) return;
+    scrollDebugFrame = window.requestAnimationFrame(() => {
+      scrollDebugFrame = null;
+      renderScrollDebug(scrollDebugPendingStage);
+    });
+  }
+
+  function captureScrollDebugWheel(event) {
+    const matrixScroll = matrixScrollFromWheelEvent(event);
+    scrollDebugMatrix = matrixScroll || scrollDebugMatrix;
+    scrollDebugEventCount += 1;
+    scrollDebugLastEvent = {
+      bubbled: false,
+      cancelable: event.cancelable,
+      ctrlKey: event.ctrlKey,
+      deltaMode: event.deltaMode,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      matrixPath: Boolean(matrixScroll),
+      prevented: event.defaultPrevented,
+      shiftKey: event.shiftKey,
+      target: scrollDebugTargetLabel(event.target),
+      trusted: event.isTrusted,
+      hasVertical: Math.abs(event.deltaY) > WHEEL_SCROLL_EPSILON,
+    };
+    scheduleScrollDebug('after-wheel-frame');
+  }
+
+  function bubbleScrollDebugWheel(event) {
+    if (!scrollDebugLastEvent) return;
+    scrollDebugLastEvent.bubbled = true;
+    scrollDebugLastEvent.prevented = event.defaultPrevented;
+    scheduleScrollDebug('after-wheel-frame');
+  }
+
+  function captureScrollDebugScroll() {
+    scheduleScrollDebug('scroll');
+  }
+
+  function mountScrollDebug() {
+    if (!scrollDebugEnabled() || scrollDebugPanel) return;
+    scrollDebugPanel = document.createElement('pre');
+    scrollDebugPanel.setAttribute('data-scroll-debug', SCROLL_DEBUG_VERSION);
+    scrollDebugPanel.style.cssText = [
+      'position:fixed',
+      'z-index:2147483647',
+      'top:88px',
+      'right:12px',
+      'width:min(460px,calc(100vw - 24px))',
+      'margin:0',
+      'padding:12px',
+      'border:1px solid rgba(255,255,255,.35)',
+      'border-radius:8px',
+      'background:rgba(15,23,42,.94)',
+      'color:#f8fafc',
+      'font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
+      'white-space:pre-wrap',
+      'pointer-events:none',
+      'box-shadow:0 8px 28px rgba(15,23,42,.3)',
+    ].join(';');
+    document.body.append(scrollDebugPanel);
+    window.addEventListener('wheel', captureScrollDebugWheel, { capture: true, passive: true });
+    window.addEventListener('wheel', bubbleScrollDebugWheel, { passive: true });
+    window.addEventListener('scroll', captureScrollDebugScroll, { capture: true, passive: true });
+    renderScrollDebug();
+  }
+
+  function unmountScrollDebug() {
+    window.removeEventListener('wheel', captureScrollDebugWheel, true);
+    window.removeEventListener('wheel', bubbleScrollDebugWheel);
+    window.removeEventListener('scroll', captureScrollDebugScroll, true);
+    if (scrollDebugFrame !== null) window.cancelAnimationFrame(scrollDebugFrame);
+    scrollDebugFrame = null;
+    scrollDebugPendingStage = 'ready';
+    scrollDebugPanel?.remove();
+    scrollDebugPanel = null;
+    scrollDebugMatrix = null;
+    scrollDebugLastEvent = null;
+    scrollDebugDecision = 'none';
+    scrollDebugDecisionCounts.clear();
   }
 
   function wheelEventTimestamp(event) {
     return Number.isFinite(event.timeStamp) ? event.timeStamp : window.performance.now();
   }
 
-  function matrixScrollForWheelGesture(event) {
-    const pathMatrix = matrixScrollFromWheelPath(event);
+  function wheelGestureOwnerIsActive(event) {
+    if (!wheelGestureOwner) return false;
     const timestamp = wheelEventTimestamp(event);
-    const ownerExpired = !wheelGestureOwner
-      || timestamp < wheelGestureOwner.lastTimestamp
-      || timestamp - wheelGestureOwner.lastTimestamp > WHEEL_GESTURE_IDLE_MS
-      || (wheelGestureOwner.matrixScroll && !wheelGestureOwner.matrixScroll.isConnected);
+    return timestamp >= wheelGestureOwner.lastTimestamp
+      && timestamp - wheelGestureOwner.lastTimestamp <= WHEEL_GESTURE_IDLE_MS
+      && (!wheelGestureOwner.matrixScroll || wheelGestureOwner.matrixScroll.isConnected);
+  }
+
+  function matrixScrollForWheelGesture(event, eventMatrix = matrixScrollFromWheelEvent(event)) {
+    const timestamp = wheelEventTimestamp(event);
+    const ownerExpired = !wheelGestureOwnerIsActive(event);
 
     if (ownerExpired) {
-      wheelGestureOwner = { matrixScroll: pathMatrix, lastTimestamp: timestamp };
+      wheelGestureOwner = { matrixScroll: eventMatrix, lastTimestamp: timestamp };
     } else {
       wheelGestureOwner.lastTimestamp = timestamp;
       // A sequence that starts in the outer content remains native even when
       // scrolling moves the matrix under a stationary pointer. A deliberate
       // move from one matrix to another, however, changes the inner owner.
-      if (wheelGestureOwner.matrixScroll && pathMatrix && pathMatrix !== wheelGestureOwner.matrixScroll) {
-        wheelGestureOwner = { matrixScroll: pathMatrix, lastTimestamp: timestamp };
+      if (wheelGestureOwner.matrixScroll && eventMatrix && eventMatrix !== wheelGestureOwner.matrixScroll) {
+        wheelGestureOwner = { matrixScroll: eventMatrix, lastTimestamp: timestamp };
       }
     }
 
@@ -353,8 +555,8 @@ export function createDigitalChessboardFeature(root, options = {}) {
     matrixScroll.scrollTop = matrixTarget;
 
     const remainder = remainingDelta - (matrixTarget - matrixStart);
-    if (Math.abs(remainder) > 0.01) outerScroll.scrollTop += remainder;
-    if (Math.abs(outerScroll.scrollTop - outerStart) > 0.01) flushWorkStickyLayers();
+    if (Math.abs(remainder) > WHEEL_SCROLL_EPSILON) outerScroll.scrollTop += remainder;
+    if (Math.abs(outerScroll.scrollTop - outerStart) > WHEEL_SCROLL_EPSILON) flushWorkStickyLayers();
   }
 
   function cancelSmoothWheelMotion() {
@@ -392,7 +594,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     }
 
     const elapsed = motion.lastTimestamp === null
-      ? 16
+      ? WHEEL_SCROLL_INITIAL_FRAME_MS
       : Math.min(WHEEL_SCROLL_MAX_FRAME_MS, Math.max(1, timestamp - motion.lastTimestamp));
     const factor = 1 - Math.exp(-elapsed / WHEEL_SCROLL_TIME_CONSTANT_MS);
     motion.lastTimestamp = timestamp;
@@ -447,7 +649,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
       motion.outerScroll.scrollTop = motion.outerTarget;
     }
 
-    if (Math.abs(motion.outerScroll.scrollTop - outerStart) > 0.01) {
+    if (Math.abs(motion.outerScroll.scrollTop - outerStart) > WHEEL_SCROLL_EPSILON) {
       flushWorkStickyLayers();
     }
 
@@ -522,7 +724,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
       smoothWheelMotion.upwardAlignmentRemaining -= alignmentStep;
       remainingDelta += alignmentStep;
 
-      if (smoothWheelMotion.outerLeadTarget <= 0.01) {
+      if (smoothWheelMotion.outerLeadTarget <= WHEEL_SCROLL_EPSILON) {
         smoothWheelMotion.upwardAlignmentRemaining = 0;
       }
     }
@@ -587,7 +789,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
       const nativeDistance = (matrixScroll.scrollTop - pending.matrixStart)
         + (pending.outerScroll.scrollTop - pending.outerStart);
       const remainder = pending.delta - nativeDistance;
-      if (Math.abs(remainder) > 0.01 && Math.sign(remainder) === Math.sign(pending.delta)) {
+      if (Math.abs(remainder) > WHEEL_SCROLL_EPSILON && Math.sign(remainder) === Math.sign(pending.delta)) {
         queueSmoothMatrixVerticalDelta(matrixScroll, pending.outerScroll, remainder);
       }
     });
@@ -600,15 +802,26 @@ export function createDigitalChessboardFeature(root, options = {}) {
     pendingWheelReconciliations.clear();
   }
 
-  function routeMatrixVerticalWheel(event) {
-    if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+  function routeMatrixVerticalWheel(event, eventMatrix = matrixScrollFromWheelEvent(event)) {
+    if (event.ctrlKey || event.shiftKey) {
+      recordScrollDebugDecision(event.ctrlKey
+        ? 'excluded-ctrl'
+        : 'excluded-shift');
       wheelGestureOwner = null;
       cancelSmoothWheelMotion();
       cancelPendingWheelReconciliations();
       return;
     }
-    const matrixScroll = matrixScrollForWheelGesture(event);
+    if (Math.abs(event.deltaY) <= WHEEL_SCROLL_EPSILON) {
+      // A touchpad may emit an X-only frame inside an otherwise diagonal
+      // sequence. It remains native and must not cancel the queued Y motion or
+      // discard the matrix owner needed by later retargeted frames.
+      recordScrollDebugDecision('excluded-no-vertical');
+      return;
+    }
+    const matrixScroll = matrixScrollForWheelGesture(event, eventMatrix);
     if (!matrixScroll) {
+      recordScrollDebugDecision('no-matrix-owner');
       cancelSmoothWheelMotion();
       cancelPendingWheelReconciliations();
       return;
@@ -618,40 +831,79 @@ export function createDigitalChessboardFeature(root, options = {}) {
     // two-axis scrolling and must not hand the remaining delta to the hidden
     // outer work list.
     if (fullscreenSession) {
+      recordScrollDebugDecision('fullscreen-native');
       cancelSmoothWheelMotion();
       cancelPendingWheelReconciliations();
       return;
     }
 
-    const outerScroll = workStickyScrollHost || root.closest('.s-center-main');
-    if (!outerScroll) return;
+    const outerScroll = workStickyScrollHost;
+    if (!outerScroll) {
+      recordScrollDebugDecision('no-outer-host');
+      return;
+    }
 
     const delta = wheelDeltaInPixels(event, outerScroll.clientHeight);
-    if (!delta) return;
+    if (!delta) {
+      recordScrollDebugDecision('zero-delta');
+      return;
+    }
 
     if (!event.cancelable) {
+      recordScrollDebugDecision('noncancelable-reconcile');
       reconcileNativeMatrixWheel(matrixScroll, outerScroll, delta);
       return;
     }
 
     // One handler owns the whole vertical gesture: the matrix consumes the
     // available distance and the remainder reaches the page in the same event.
-    // This avoids relying on browser scroll-latching or a pointer-move hit-test.
+    // A single capture owner also preserves the matrix owner across browser
+    // scroll-latching/retargeting without applying the vertical component twice.
     event.preventDefault();
+    const horizontalDelta = wheelHorizontalDeltaInPixels(event, matrixScroll.clientWidth);
+    if (Math.abs(horizontalDelta) > WHEEL_SCROLL_EPSILON) {
+      matrixScroll.scrollLeft += horizontalDelta;
+    }
+    recordScrollDebugDecision('prevented-queued');
     queueSmoothMatrixVerticalDelta(matrixScroll, outerScroll, delta);
+  }
+
+  function routeWindowVerticalWheel(event) {
+    const belongsToMain = event.composedPath().some(node => (
+      node === workStickyScrollHost
+      || (node instanceof Element && node.classList.contains('s-center-main'))
+    ));
+    const eventMatrix = matrixScrollFromWheelEvent(event);
+    if (!belongsToMain && !eventMatrix && !wheelGestureOwnerIsActive(event)) return;
+    routeMatrixVerticalWheel(event, eventMatrix);
   }
 
   function bindWorkStickyLayers() {
     workStickyScrollHost = root.closest('.s-center-main');
+    mountScrollDebug();
     workStickyScrollHost?.addEventListener('scroll', scheduleWorkStickyLayers, { passive: true });
-    workStickyScrollHost?.addEventListener('wheel', routeMatrixVerticalWheel, { capture: true, passive: false });
+    window.addEventListener('wheel', routeWindowVerticalWheel, { capture: true, passive: false });
+    wheelCaptureBound = true;
     window.addEventListener('resize', scheduleWorkStickyLayers);
+    if ('ResizeObserver' in window) {
+      workStickyResizeObserver = new ResizeObserver(scheduleWorkStickyLayers);
+      refreshWorkStickyGeometryObservers();
+    }
+    document.fonts?.addEventListener?.('loadingdone', scheduleWorkStickyLayers);
+    document.fonts?.ready?.then(() => {
+      if (!destroyed) scheduleWorkStickyLayers();
+    });
   }
 
   function unbindWorkStickyLayers() {
     workStickyScrollHost?.removeEventListener('scroll', scheduleWorkStickyLayers);
-    workStickyScrollHost?.removeEventListener('wheel', routeMatrixVerticalWheel, true);
+    window.removeEventListener('wheel', routeWindowVerticalWheel, true);
+    wheelCaptureBound = false;
+    unmountScrollDebug();
     window.removeEventListener('resize', scheduleWorkStickyLayers);
+    document.fonts?.removeEventListener?.('loadingdone', scheduleWorkStickyLayers);
+    workStickyResizeObserver?.disconnect();
+    workStickyResizeObserver = null;
     wheelGestureOwner = null;
     cancelSmoothWheelMotion();
     cancelPendingWheelReconciliations();
@@ -667,54 +919,13 @@ export function createDigitalChessboardFeature(root, options = {}) {
     period = object?.periods?.[0] || null;
   }
 
-  function completionBridgeIndexes(completedIndexes, capacity) {
-    if (capacity <= 0) return [];
-    const gaps = completedIndexes.slice(1).map((index, offset) => ({
-      start: completedIndexes[offset] + 1,
-      end: index - 1,
-    })).filter(gap => gap.start <= gap.end);
-    const bridges = [];
-
-    gaps.forEach((gap) => {
-      if (bridges.length < capacity) bridges.push(gap.start);
-    });
-    for (let depth = 1; bridges.length < capacity; depth += 1) {
-      let added = false;
-      gaps.forEach((gap) => {
-        const index = gap.start + depth;
-        if (bridges.length < capacity && index <= gap.end) {
-          bridges.push(index);
-          added = true;
-        }
-      });
-      if (!added) break;
-    }
-    return bridges;
-  }
-
   function groupModels() {
     if (!period) return [];
-    const workCount = Math.min(period.works.length, Math.max(0, Number(object?.workCount) || 0));
-    const completedIndexes = period.works
-      .map((work, index) => (work.completion === 100 ? index : -1))
-      .filter(index => index >= 0);
-
-    return GROUP_DEFINITIONS.map(definition => {
-      const bridgeCapacity = Math.max(0, workCount - completedIndexes.length - 2);
-      const selectedIndexes = new Set([
-        ...completedIndexes,
-        ...completionBridgeIndexes(completedIndexes, bridgeCapacity),
-      ]);
-      definition.workIndexes.forEach((index) => {
-        if (selectedIndexes.size < workCount) selectedIndexes.add(index);
-      });
-      const startIndex = stableBucket(`${context.treeNodeId || context.objectId}:${definition.id}`) % period.works.length;
-      for (let offset = 0; selectedIndexes.size < workCount && offset < period.works.length; offset += 1) {
-        selectedIndexes.add((startIndex + offset) % period.works.length);
-      }
-      const works = period.works.filter((_work, index) => selectedIndexes.has(index)).slice(0, workCount);
-      return { ...definition, works };
-    });
+    const identity = context.treeNodeId || context.objectId;
+    return GROUP_DEFINITIONS.map(definition => ({
+      ...definition,
+      works: createGroupWorks(definition, period.works, object?.workCount, identity),
+    }));
   }
 
   function activeGroup() {
@@ -739,11 +950,19 @@ export function createDigitalChessboardFeature(root, options = {}) {
   }
 
   function displaySections(work) {
-    const { partCount } = displayGeometry();
-    return Array.from({ length: partCount }, (_, index) => work.sections[index] || {
-      id: `display-part-${index + 1}`,
-      name: `${object.partLabel} ${index + 1}`,
-      isDisplayPlaceholder: true,
+    const { partCount, floorCount } = displayGeometry();
+    return Array.from({ length: partCount }, (_, index) => {
+      const section = work.sections[index];
+      if (!section) return {
+        id: `display-part-${index + 1}`,
+        name: `${object.partLabel} ${index + 1}`,
+        floorCount: 0,
+        isDisplayPlaceholder: true,
+      };
+      return {
+        ...section,
+        floorCount: Math.min(floorCount, Math.max(1, Number(section.floorCount) || floorCount)),
+      };
     });
   }
 
@@ -768,7 +987,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     const scrollTop = Math.min(maximum, Math.max(0, scroll.scrollTop));
     matrixScrollPositions.set(key, {
       scrollTop,
-      atBottom: maximum - scrollTop <= 1,
+      atBottom: maximum - scrollTop <= MATRIX_SCROLL_BOTTOM_TOLERANCE,
     });
     return true;
   }
@@ -785,7 +1004,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     scroll.scrollTop = scrollTop;
     matrixScrollPositions.set(key, {
       scrollTop,
-      atBottom: maximum - scrollTop <= 1,
+      atBottom: maximum - scrollTop <= MATRIX_SCROLL_BOTTOM_TOLERANCE,
     });
     return true;
   }
@@ -823,6 +1042,8 @@ export function createDigitalChessboardFeature(root, options = {}) {
       for (let sectionIndex = 0; sectionIndex < geometry.partCount; sectionIndex += 1) {
         const section = work.sections[sectionIndex];
         if (!section) continue;
+        const sectionFloorCount = Math.min(geometry.floorCount, Math.max(1, Number(section.floorCount) || geometry.floorCount));
+        if (floor > sectionFloorCount) continue;
         const originalState = baselineState(work.cells[`${floor}:${section.id}`], overrideKey(work.id, floor, section.id));
         if (!originalState) continue;
         applicable += 1;
@@ -1309,6 +1530,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     const columns = displaySections(work).map(section => ({
       id: section.id,
       label: section.name,
+      floorCount: section.floorCount,
       isDisplayPlaceholder: Boolean(section.isDisplayPlaceholder),
     }));
     const cells = {};
@@ -1316,13 +1538,14 @@ export function createDigitalChessboardFeature(root, options = {}) {
       const state = cellState(work, row.id, column.id);
       const original = work.cells[`${row.id}:${column.id}`];
       const key = createChessboardCellKey(row.id, column.id);
+      const isPhysicallyAbsent = !column.isDisplayPlaceholder && Number(row.id) > column.floorCount;
       if (column.isDisplayPlaceholder) cells[key] = {
         state: 'display-placeholder',
         label: 'Недоступно для объекта',
         tone: 'neutral',
         disabled: true,
       };
-      else if (!state || original?.status === 'not-applicable') cells[key] = {
+      else if (isPhysicallyAbsent || !state || original?.status === 'not-applicable') cells[key] = {
         state: '',
         label: 'Пересечение отсутствует',
         tone: 'neutral',
@@ -1833,7 +2056,10 @@ export function createDigitalChessboardFeature(root, options = {}) {
     closeOverlays();
     groupModal?.element?.remove();
     groupModal = null;
-    if (!object || !period) return renderContextEmptyState();
+    if (!object || !period) {
+      renderContextEmptyState();
+      return;
+    }
     const tabs = createTabs({
       id: 'digital-chessboard-tabs', label: 'Разделы объекта строительства', value: activeTab, className: 'dch2-tabs',
       items: [
@@ -1855,6 +2081,7 @@ export function createDigitalChessboardFeature(root, options = {}) {
     root.replaceChildren(tabs.element);
     if (activeTab === 'chessboard') restoreOpenMatrixScrollPositions();
     hydrateAdapterIcons();
+    refreshWorkStickyGeometryObservers();
     scheduleWorkStickyLayers();
   }
 

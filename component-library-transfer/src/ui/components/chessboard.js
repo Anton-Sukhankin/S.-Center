@@ -41,8 +41,69 @@ function normalizeCell(cell = {}) {
 }
 
 /**
- * Creates an accessible row-by-column matrix with none, single or multiple selection.
- * Domain state labels, colors and mutation results are supplied by the consumer.
+ * @typedef {Object} ChessboardAxisItem
+ * @property {string|number} id Stable row or column identifier.
+ * @property {string|number} [label=id] Visible axis label.
+ */
+
+/**
+ * @typedef {Object} ChessboardState
+ * @property {string|number} id Stable state identifier.
+ * @property {string} [label=id] Visible and accessible state label.
+ * @property {'neutral'|'accent'|'info'|'success'|'warning'|'danger'} [tone='neutral']
+ * @property {'none'|'solid'|'diagonal'} [pattern='none']
+ */
+
+/**
+ * @typedef {Object} ChessboardCell
+ * @property {string|number} [state] Identifier of a state supplied through `states`.
+ * @property {string} [label] Cell-specific accessible label; overrides the state label.
+ * @property {string|number} [text] Optional visible value inside the cell.
+ * @property {'neutral'|'accent'|'info'|'success'|'warning'|'danger'} [tone='neutral']
+ * @property {'none'|'solid'|'diagonal'} [pattern='none']
+ * @property {'default'|'absent'} [appearance='default']
+ * @property {boolean} [disabled=false]
+ */
+
+/**
+ * Creates an accessible row-by-column matrix with optional selection and runtime cell updates.
+ *
+ * The component owns table semantics, roving keyboard focus, selection state, legend rendering,
+ * sticky axes and the internal two-axis scroll region. The consumer owns domain labels, state
+ * meaning, cell geometry, calculations, persistence and compositions such as Menu or Tooltip.
+ * A missing cell entry is a neutral existing cell. Non-existent geometry must be explicit with
+ * `appearance: 'absent'` and `disabled: true` so it cannot be selected or activated.
+ *
+ * @param {Object} [options]
+ * @param {string} [options.label='Шахматка'] Accessible matrix name.
+ * @param {string} [options.rowHeaderLabel='Строка'] Visible corner label for the row axis.
+ * @param {ChessboardAxisItem[]} [options.rows=[]]
+ * @param {ChessboardAxisItem[]} [options.columns=[]]
+ * @param {Record<string, ChessboardCell>} [options.cells={}] Keyed by `createChessboardCellKey`.
+ * @param {ChessboardState[]} [options.states=[]] Legend and fallback visual definitions.
+ * @param {'none'|'single'|'multiple'} [options.selectionMode='single']
+ * @param {Array<string|number>} [options.selectedKeys=[]]
+ * @param {boolean} [options.showLegend=true]
+ * @param {boolean} [options.showCellTitle=true] Set false when composing an external Tooltip; `aria-label` remains.
+ * @param {string} [options.emptyMessage='Нет данных для отображения']
+ * @param {string} [options.className='']
+ * @param {Record<string, unknown>} [options.attributes={}]
+ * @param {Function} [options.onSelectionChange] Receives selected cell details and `{ keys, reason, event }`.
+ * @param {Function} [options.onCellActivate] Receives `{ key, row, column, cell, selected, event }` after activation.
+ * @returns {{
+ *   element: HTMLElement,
+ *   scroll: HTMLElement,
+ *   table: HTMLTableElement,
+ *   legend: HTMLUListElement,
+ *   getSelectedKeys: Function,
+ *   getSelectedCells: Function,
+ *   setSelectedKeys: Function,
+ *   clearSelection: Function,
+ *   setSelectionMode: Function,
+ *   setCellState: Function,
+ *   getCellElement: Function,
+ *   focusCell: Function
+ * }}
  */
 export function createChessboard({
   label = 'Шахматка',

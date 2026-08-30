@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { access, readdir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkContextGovernance } from './check-context-governance.mjs';
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url));
 const docsOnly = process.argv.includes('--docs-only');
@@ -137,10 +138,14 @@ async function checkDocumentation() {
   requireRoute('README.md', 'AGENTS.md');
   requireRoute('README.md', 'docs/README.md');
   requireRoute('docs/README.md', 'docs/workspace-architecture.md');
+  requireRoute('docs/README.md', 'docs/context-governance/README.md');
+  requireRoute('docs/README.md', 'docs/context-governance/area-registry.json');
   requireRoute('docs/README.md', 's-center-prototype/README.md');
   requireRoute('docs/README.md', 'component-library-transfer/README.md');
   requireRoute('docs/README.md', 'digital-chessboard-transfer/README.md');
   requireRoute('AGENTS.md', 'docs/README.md');
+  requireRoute('AGENTS.md', 'docs/context-governance/README.md');
+  requireRoute('AGENTS.md', 'docs/context-governance/area-registry.json');
   requireRoute('s-center-prototype/README.md', 's-center-prototype/docs/README.md');
   requireRoute('digital-chessboard-transfer/README.md', 'digital-chessboard-transfer/MIGRATION.md');
   requireRoute('digital-chessboard-transfer/README.md', 'digital-chessboard-transfer/SOURCE_MANIFEST.md');
@@ -161,6 +166,7 @@ async function checkDocumentation() {
   }
 
   console.log(`Workspace documentation: ${markdownFiles.length} Markdown-файлов, ссылки и корневые маршруты корректны.`);
+  await checkContextGovernance();
 }
 
 function runPackageCheck({ label, directory, script }) {

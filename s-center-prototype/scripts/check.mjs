@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkDocumentation } from './check-docs.mjs';
 import { checkDigitalChessboardData } from './check-digital-chessboard-data.mjs';
+import { checkScrollContract } from './check-scroll-contract.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
-const sourceRoots = [join(projectRoot, 'src'), join(projectRoot, 'scripts')];
+const sourceRoots = [join(projectRoot, 'src'), join(projectRoot, 'scripts'), join(projectRoot, 'tests')];
+const standaloneJavaScriptFiles = [join(projectRoot, 'playwright.config.mjs')];
 
 async function collectJavaScriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -18,7 +20,10 @@ async function collectJavaScriptFiles(directory) {
   return files.flat();
 }
 
-const files = (await Promise.all(sourceRoots.map(collectJavaScriptFiles))).flat().sort();
+const files = [
+  ...(await Promise.all(sourceRoots.map(collectJavaScriptFiles))).flat(),
+  ...standaloneJavaScriptFiles,
+].sort();
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (result.status !== 0) {
@@ -30,3 +35,4 @@ for (const file of files) {
 console.log(`Проверено JavaScript-файлов: ${files.length}.`);
 await checkDigitalChessboardData();
 await checkDocumentation();
+await checkScrollContract();

@@ -564,7 +564,8 @@
   min-height: 68px;
   display: grid;
   flex: 0 0 68px;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 24px;
   align-items: center;
   border-bottom: 1px solid #e2e8f0;
   border-radius: 0;
@@ -635,7 +636,7 @@
   display: inline-flex;
   grid-column: 2;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -1075,7 +1076,7 @@
   .dch2-work-accordion.is-work-fullscreen .ds-accordion__header {
     min-height: 100px;
     flex-basis: 100px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-rows: 60px 40px;
   }
 
@@ -1087,14 +1088,13 @@
   }
 
   .dch2-work-accordion.is-work-fullscreen .dch2-work-fullscreen-navigation {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 2;
-    justify-self: start;
-    margin-left: 64px;
+    justify-self: end;
   }
 
   .dch2-work-accordion.is-work-fullscreen .dch2-work-fullscreen-toggle.ds-button {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
   }
 }

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "routingStrategy": "longest-scope-path",
+  "areas": [
+    {
+      "id": "workspace",
+      "title": "S.Center workspace",
+      "kind": "workspace",
+      "parent": null,
+      "maturity": "prototype",
+      "scopePaths": ["."],
+      "index": "docs/README.md",
+      "documentationRoot": "docs",
+      "checks": ["npm.cmd run check"]
+    },
+    {
+      "id": "context-governance",
+      "title": "Управление контекстом",
+      "kind": "governance",
+      "parent": "workspace",
+      "maturity": "current",
+      "scopePaths": ["docs/context-governance"],
+      "index": "docs/context-governance/README.md",
+      "documentationRoot": "docs/context-governance",
+      "checks": ["npm.cmd run check:docs"]
+    },
+    {
+      "id": "s-center-prototype",
+      "title": "S.Center prototype",
+      "kind": "application",
+      "parent": "workspace",
+      "maturity": "prototype",
+      "scopePaths": ["s-center-prototype"],
+      "index": "s-center-prototype/docs/README.md",
+      "documentationRoot": "s-center-prototype/docs",
+      "checks": ["cd s-center-prototype; npm.cmd run check"]
+    },
+    {
+      "id": "digital-chessboard",
+      "title": "Цифровая шахматка",
+      "kind": "feature",
+      "parent": "s-center-prototype",
+      "maturity": "prototype",
+      "scopePaths": [
+        "s-center-prototype/docs/digital-chessboard",
+        "s-center-prototype/src/integrations/digital-chessboard"
+      ],
+      "index": "s-center-prototype/docs/digital-chessboard/README.md",
+      "documentationRoot": "s-center-prototype/docs/digital-chessboard",
+      "checks": ["cd s-center-prototype; npm.cmd run check", "npm.cmd run check"]
+    },
+    {
+      "id": "prototype-quality",
+      "title": "Качество интерфейса прототипа",
+      "kind": "quality",
+      "parent": "s-center-prototype",
+      "maturity": "prototype-evidence",
+      "scopePaths": ["s-center-prototype/docs/quality"],
+      "index": "s-center-prototype/docs/quality/README.md",
+      "documentationRoot": "s-center-prototype/docs/quality",
+      "checks": ["cd s-center-prototype; npm.cmd run check"]
+    },
+    {
+      "id": "component-library-transfer",
+      "title": "Переносимая компонентная база",
+      "kind": "package",
+      "parent": "workspace",
+      "maturity": "transfer-snapshot",
+      "scopePaths": ["component-library-transfer"],
+      "index": "component-library-transfer/README.md",
+      "documentationRoot": null,
+      "checks": ["cd component-library-transfer; npm.cmd run verify"]
+    },
+    {
+      "id": "digital-chessboard-transfer",
+      "title": "Исходный снимок цифровой шахматки",
+      "kind": "transfer",
+      "parent": "workspace",
+      "maturity": "historical-snapshot",
+      "scopePaths": ["digital-chessboard-transfer"],
+      "index": "digital-chessboard-transfer/README.md",
+      "documentationRoot": null,
+      "checks": ["cd digital-chessboard-transfer; npm.cmd run check"]
+    }
+  ]
+}

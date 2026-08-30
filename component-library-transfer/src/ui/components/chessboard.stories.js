@@ -2,6 +2,7 @@ import { createBulkActionBar } from './bulk-action-bar.js';
 import { createButton } from './button.js';
 import { createChessboard, createChessboardCellKey } from './chessboard.js';
 import { createDocumentPreviewIcon } from './document-preview-icon.js';
+import { createMenu } from './menu.js';
 
 export default {
   title: 'Data Display/Chessboard',
@@ -64,6 +65,15 @@ function stateSwatch(state) {
   return swatch;
 }
 
+function destroyWhenDisconnected(element, cleanup) {
+  const observer = new MutationObserver(() => {
+    if (element.isConnected) return;
+    observer.disconnect();
+    cleanup();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
 export const CurrentPrototypeVisual = {
   render: () => createChessboard({
     label: 'Готовность по этажам и секциям',
@@ -97,6 +107,167 @@ export const NormalizedWeeklyStates = {
       states,
       selectionMode: 'none',
     }).element;
+  },
+};
+
+export const VariableGeometry = {
+  render: () => {
+    const geometryRows = [8, 7, 6, 5, 4, 3, 2, 1].map(level => ({ id: level, label: `Уровень ${level}` }));
+    const geometryColumns = [
+      { id: 'area-a', label: 'Область A', height: 8 },
+      { id: 'area-b', label: 'Область B', height: 6 },
+      { id: 'area-c', label: 'Область C', height: 4 },
+      { id: 'area-d', label: 'Область D', height: 7 },
+    ];
+    const geometryCells = {};
+    geometryRows.forEach(row => geometryColumns.forEach(column => {
+      const key = createChessboardCellKey(row.id, column.id);
+      const absent = row.id > column.height;
+      geometryCells[key] = absent
+        ? { label: 'Пересечение отсутствует', appearance: 'absent', disabled: true }
+        : { label: 'Существующая ячейка без назначенного состояния' };
+    }));
+    return createChessboard({
+      label: 'Матрица с переменной геометрией колонок',
+      rowHeaderLabel: 'Уровень',
+      rows: geometryRows,
+      columns: geometryColumns,
+      cells: geometryCells,
+      states: [],
+      selectionMode: 'none',
+    }).element;
+  },
+};
+
+export const CellContextMenu = {
+  render: () => {
+    const shell = storyShell();
+    shell.classList.add('component-chessboard-story--context-menu');
+    const hint = document.createElement('p');
+    hint.className = 'component-chessboard-story__hint';
+    hint.setAttribute('role', 'status');
+    hint.textContent = 'Активируйте доступную ячейку, затем выберите новое состояние.';
+    let board;
+    let activeMenu = null;
+
+    const closeMenu = ({ returnFocus = false } = {}) => {
+      if (!activeMenu) return;
+      const { cellButton, menu } = activeMenu;
+      activeMenu = null;
+      cellButton.removeAttribute('aria-controls');
+      cellButton.setAttribute('aria-expanded', 'false');
+      menu.destroy();
+      if (returnFocus && cellButton.isConnected) requestAnimationFrame(() => cellButton.focus());
+    };
+
+    const positionMenu = active => {
+      const shellRect = shell.getBoundingClientRect();
+      const cellRect = active.cellButton.getBoundingClientRect();
+      active.menu.element.style.left = `${cellRect.left - shellRect.left}px`;
+      active.menu.element.style.top = `${cellRect.top - shellRect.top}px`;
+      active.menu.element.style.width = `${cellRect.width}px`;
+      active.menu.element.style.height = `${cellRect.height}px`;
+    };
+
+    board = createChessboard({
+      label: 'Матрица с контекстным меню ячейки',
+      rowHeaderLabel: 'Уровень',
+      rows: rows.slice(0, 3),
+      columns: columns.slice(0, 5),
+      cells: cells(),
+      states,
+      selectionMode: 'none',
+      onCellActivate: detail => {
+        const cellButton = detail.event.currentTarget;
+        if (!(cellButton instanceof HTMLButtonElement) || cellButton.disabled) return;
+        if (activeMenu?.cellButton === cellButton) {
+          closeMenu({ returnFocus: true });
+          return;
+        }
+        closeMenu();
+
+        const anchor = document.createElement('button');
+        anchor.type = 'button';
+        anchor.tabIndex = -1;
+        anchor.className = 'component-chessboard-story__menu-anchor';
+        anchor.setAttribute('aria-hidden', 'true');
+        const menu = createMenu({
+          label: `Выбор состояния: ${detail.row.label}, ${detail.column.label}`,
+          trigger: anchor,
+          className: 'component-chessboard-story__cell-menu',
+          items: editableStates.map(state => ({
+            id: state.id,
+            label: state.label,
+            icon: stateSwatch(state),
+            onSelect: () => {
+              board.setCellState(detail.key, {
+                state: state.id,
+                tone: state.tone,
+                pattern: state.pattern,
+                label: state.label,
+                text: '',
+              });
+              hint.textContent = `${detail.row.label}, ${detail.column.label}: выбрано состояние «${state.label}».`;
+              closeMenu({ returnFocus: true });
+            },
+          })),
+        });
+        activeMenu = { cellButton, menu };
+        shell.append(menu.element);
+        cellButton.setAttribute('aria-haspopup', 'menu');
+        cellButton.setAttribute('aria-controls', menu.menu.id);
+        cellButton.setAttribute('aria-expanded', 'true');
+        menu.menu.addEventListener('keydown', event => {
+          if (event.key === 'Escape') requestAnimationFrame(() => closeMenu({ returnFocus: true }));
+          else if (event.key === 'Tab') requestAnimationFrame(() => closeMenu());
+        });
+        menu.setOpen(true);
+        positionMenu(activeMenu);
+      },
+    });
+
+    const closeOnScroll = () => closeMenu();
+    const closeOnResize = () => closeMenu();
+    const closeOnOutsidePointer = event => {
+      if (!activeMenu) return;
+      if (!activeMenu.menu.element.contains(event.target) && event.target !== activeMenu.cellButton) closeMenu();
+    };
+    board.scroll.addEventListener('scroll', closeOnScroll);
+    window.addEventListener('resize', closeOnResize);
+    document.addEventListener('pointerdown', closeOnOutsidePointer, true);
+    destroyWhenDisconnected(shell, () => {
+      board.scroll.removeEventListener('scroll', closeOnScroll);
+      window.removeEventListener('resize', closeOnResize);
+      document.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+      closeMenu();
+    });
+    shell.append(hint, board.element);
+    return shell;
+  },
+};
+
+export const HorizontalOverflow = {
+  render: () => {
+    const shell = storyShell();
+    shell.classList.add('component-chessboard-story--narrow');
+    const hint = document.createElement('p');
+    hint.className = 'component-chessboard-story__hint';
+    hint.textContent = 'Ограниченный контейнер сохраняет горизонтальную прокрутку и фиксированную первую колонку.';
+    const overflowColumns = Array.from({ length: 12 }, (_, index) => ({
+      id: `column-${index + 1}`,
+      label: `Колонка ${index + 1}`,
+    }));
+    const board = createChessboard({
+      label: 'Матрица с горизонтальным переполнением',
+      rowHeaderLabel: 'Уровень',
+      rows: rows.slice(0, 4),
+      columns: overflowColumns,
+      states,
+      selectionMode: 'single',
+    });
+    board.element.style.setProperty('--ds-chessboard-min-width', '1120px');
+    shell.append(hint, board.element);
+    return shell;
   },
 };
 
